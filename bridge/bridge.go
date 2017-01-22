@@ -10,6 +10,7 @@ import (
 	"github.com/42wim/matterbridge/bridge/slack"
 	"github.com/42wim/matterbridge/bridge/telegram"
 	"github.com/42wim/matterbridge/bridge/xmpp"
+	"github.com/42wim/matterbridge/bridge/web"
 	"strings"
 )
 
@@ -63,6 +64,9 @@ func New(cfg *config.Config, bridge *config.Bridge, c chan config.Message) *Brid
 	case "rocketchat":
 		b.Config = cfg.Rocketchat[name]
 		b.Bridger = brocketchat.New(cfg.Rocketchat[name], bridge.Account, c)
+	case "web":
+		b.Config = cfg.Web[name]
+		b.Bridger = bweb.New(cfg.Web[name], bridge.Account, c)
 	}
 	return b
 }

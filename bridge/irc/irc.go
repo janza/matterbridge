@@ -131,15 +131,21 @@ func (b *Birc) endNames(event *irc.Event) {
 	channel := event.Arguments[1]
 	sort.Strings(b.names[channel])
 	maxNamesPerPost := (300 / b.nicksPerRow()) * b.nicksPerRow()
-	continued := false
 	for len(b.names[channel]) > maxNamesPerPost {
-		b.Remote <- config.Message{Username: b.Nick, Text: b.formatnicks(b.names[channel][0:maxNamesPerPost], continued),
-			Channel: channel, Account: b.Account}
+		b.Remote <- config.Message{
+			Username: b.Nick,
+			Text:     b.formatnicks(b.names[channel][0:maxNamesPerPost]),
+			Channel:  channel,
+			Account:  b.Account,
+		}
 		b.names[channel] = b.names[channel][maxNamesPerPost:]
-		continued = true
 	}
-	b.Remote <- config.Message{Username: b.Nick, Text: b.formatnicks(b.names[channel], continued),
-		Channel: channel, Account: b.Account}
+	b.Remote <- config.Message{
+		Username: b.Nick,
+		Text:     b.formatnicks(b.names[channel]),
+		Channel:  channel,
+		Account:  b.Account,
+	}
 	b.names[channel] = nil
 	b.i.ClearCallback(ircm.RPL_NAMREPLY)
 	b.i.ClearCallback(ircm.RPL_ENDOFNAMES)
@@ -194,8 +200,10 @@ func (b *Birc) handleOther(event *irc.Event) {
 
 func (b *Birc) handlePrivMsg(event *irc.Event) {
 	// don't forward queries to the bot
-	if event.Arguments[0] == b.Nick {
-		return
+	channel := event.Arguments[0]
+	isPriv := channel == b.Nick
+	if isPriv {
+		channel = event.Nick
 	}
 	// don't forward message from ourself
 	if event.Nick == b.Nick {
@@ -210,8 +218,8 @@ func (b *Birc) handlePrivMsg(event *irc.Event) {
 	// strip IRC colors
 	re := regexp.MustCompile(`[[:cntrl:]](\d+,|)\d+`)
 	msg = re.ReplaceAllString(msg, "")
-	flog.Debugf("Sending message from %s on %s to gateway", event.Arguments[0], b.Account)
-	b.Remote <- config.Message{Username: event.Nick, Text: msg, Channel: event.Arguments[0], Account: b.Account}
+	flog.Debugf("Sending message from %s on %s to gateway", channel, b.Account)
+	b.Remote <- config.Message{Username: event.Nick, Text: msg, Channel: channel, Account: b.Account, IsPriv: isPriv}
 }
 
 func (b *Birc) handleTopicWhoTime(event *irc.Event) {
@@ -244,7 +252,7 @@ func (b *Birc) storeNames(event *irc.Event) {
 		strings.Split(strings.TrimSpace(event.Message()), " ")...)
 }
 
-func (b *Birc) formatnicks(nicks []string, continued bool) string {
+func (b *Birc) formatnicks(nicks []string) string {
 	return plainformatter(nicks, b.nicksPerRow())
 	/*
 		switch b.Config.Mattermost.NickFormatter {

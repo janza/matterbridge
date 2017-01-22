@@ -558,16 +558,18 @@ type Presence struct {
 	From   string
 	To     string
 	Type   string
+	MucJid string
 	Show   string
 	Status string
 }
 
 type IQ struct {
-	ID    string
-	From  string
-	To    string
-	Type  string
-	Query []byte
+	ID          string
+	From        string
+	To          string
+	Type        string
+	Query       []byte
+	ClientQuery clientQuery
 }
 
 // Recv waits to receive the next XMPP stanza.
@@ -600,7 +602,7 @@ func (c *Client) Recv() (stanza interface{}, err error) {
 			}
 			return Chat{Type: "roster", Roster: r}, nil
 		case *clientPresence:
-			return Presence{v.From, v.To, v.Type, v.Show, v.Status}, nil
+			return Presence{v.From, v.To, v.Type, v.Item.Jid, v.Show, v.Status}, nil
 		case *clientIQ:
 			if bytes.Equal(v.Query, []byte(`<ping xmlns='urn:xmpp:ping'/>`)) {
 				err := c.SendResultPing(v.ID, v.From)
@@ -608,7 +610,14 @@ func (c *Client) Recv() (stanza interface{}, err error) {
 					return Chat{}, err
 				}
 			}
-			return IQ{ID: v.ID, From: v.From, To: v.To, Type: v.Type, Query: v.Query}, nil
+			return IQ{
+				ID:          v.ID,
+				From:        v.From,
+				To:          v.To,
+				Type:        v.Type,
+				Query:       v.Query,
+				ClientQuery: v.ClientQuery,
+			}, nil
 		}
 	}
 }
@@ -779,21 +788,30 @@ type clientPresence struct {
 	Type    string   `xml:"type,attr"` // error, probe, subscribe, subscribed, unavailable, unsubscribe, unsubscribed
 	Lang    string   `xml:"lang,attr"`
 
-	Show     string `xml:"show"`   // away, chat, dnd, xa
-	Status   string `xml:"status"` // sb []clientText
-	Priority string `xml:"priority,attr"`
+	Show     string             `xml:"show"`   // away, chat, dnd, xa
+	Status   string             `xml:"status"` // sb []clientText
+	Priority string             `xml:"priority,attr"`
+	Item     clientPresenceItem `xml:"x>item"`
 	Error    *clientError
 }
 
+type clientPresenceItem struct {
+	Jid string `xml:"jid,attr"`
+}
+
+type Ping struct {
+}
+
 type clientIQ struct { // info/query
-	XMLName xml.Name `xml:"jabber:client iq"`
-	From    string   `xml:"from,attr"`
-	ID      string   `xml:"id,attr"`
-	To      string   `xml:"to,attr"`
-	Type    string   `xml:"type,attr"` // error, get, result, set
-	Query   []byte   `xml:",innerxml"`
-	Error   clientError
-	Bind    bindBind
+	XMLName     xml.Name    `xml:"jabber:client iq"`
+	From        string      `xml:"from,attr"`
+	ID          string      `xml:"id,attr"`
+	To          string      `xml:"to,attr"`
+	Type        string      `xml:"type,attr"` // error, get, result, set
+	ClientQuery clientQuery `xml:"jabber:iq:roster query"`
+	Query       []byte      `xml:",innerxml"`
+	Error       clientError
+	Bind        bindBind
 }
 
 type clientError struct {
@@ -805,14 +823,14 @@ type clientError struct {
 }
 
 type clientQuery struct {
-	Item []rosterItem
+	Item []rosterItem `xml:"item"`
 }
 
 type rosterItem struct {
 	XMLName      xml.Name `xml:"jabber:iq:roster item"`
-	Jid          string   `xml:",attr"`
-	Name         string   `xml:",attr"`
-	Subscription string   `xml:",attr"`
+	Jid          string   `xml:"jid,attr"`
+	Name         string   `xml:"name,attr"`
+	Subscription string   `xml:"subscription,attr"`
 	Group        []string
 }
 

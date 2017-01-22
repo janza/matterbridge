@@ -86,26 +86,22 @@ func (gw *Gateway) handleReceive() {
 }
 
 func (gw *Gateway) mapChannels() error {
-	options := make(map[string]config.ChannelOptions)
-	m := make(map[string][]string)
+	gw.ChannelOptions = make(map[string]config.ChannelOptions)
+	gw.ChannelsOut = make(map[string][]string)
+	gw.ChannelsIn = make(map[string][]string)
 	for _, br := range gw.MyConfig.Out {
-		m[br.Account] = append(m[br.Account], br.Channel)
-		options[br.Account+br.Channel] = br.Options
+		gw.ChannelsOut[br.Account] = append(gw.ChannelsOut[br.Account], br.Channel)
+		gw.ChannelOptions[br.Account+br.Channel] = br.Options
 	}
-	gw.ChannelsOut = m
-	m = nil
-	m = make(map[string][]string)
 	for _, br := range gw.MyConfig.In {
-		m[br.Account] = append(m[br.Account], br.Channel)
-		options[br.Account+br.Channel] = br.Options
+		gw.ChannelsIn[br.Account] = append(gw.ChannelsIn[br.Account], br.Channel)
+		gw.ChannelOptions[br.Account+br.Channel] = br.Options
 	}
-	gw.ChannelsIn = m
 	for _, br := range gw.MyConfig.InOut {
 		gw.ChannelsIn[br.Account] = append(gw.ChannelsIn[br.Account], br.Channel)
 		gw.ChannelsOut[br.Account] = append(gw.ChannelsOut[br.Account], br.Channel)
-		options[br.Account+br.Channel] = br.Options
+		gw.ChannelOptions[br.Account+br.Channel] = br.Options
 	}
-	gw.ChannelOptions = options
 	return nil
 }
 

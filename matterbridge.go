@@ -6,12 +6,14 @@ import (
 	"github.com/42wim/matterbridge/bridge/config"
 	"github.com/42wim/matterbridge/gateway"
 	"github.com/42wim/matterbridge/gateway/samechannel"
+	"github.com/42wim/matterbridge/gateway/web"
 	log "github.com/Sirupsen/logrus"
 )
 
 var version = "0.9.2-dev"
 
 func init() {
+	log.SetLevel(log.DebugLevel)
 	log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
 }
 
@@ -54,6 +56,12 @@ func main() {
 		if err != nil {
 			log.Fatalf("starting gateway failed %#v", err)
 		}
+	}
+
+	fmt.Printf("config: %v\n", cfg.WebGateway)
+
+	if len(cfg.WebGateway.Accounts) != 0 {
+		webgateway.New(cfg, &cfg.WebGateway)
 	}
 	select {}
 }

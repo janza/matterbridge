@@ -19,10 +19,12 @@ type Message struct {
 	Avatar   string
 	Account  string
 	Event    string
+	To       string
+	IsPriv   bool
 }
 
 type Protocol struct {
-	BindAddress            string // mattermost, slack
+	BindAddress            string // mattermost, slack, web
 	IconURL                string // mattermost, slack
 	IgnoreNicks            string // all protocols
 	Jid                    string // xmpp
@@ -77,6 +79,17 @@ type SameChannelGateway struct {
 	Accounts []string
 }
 
+type AccountWithChannels struct {
+	Account  string
+	Channels []string
+}
+
+type WebGateway struct {
+	Name     string
+	Enable   bool
+	Accounts []AccountWithChannels
+}
+
 type Config struct {
 	IRC                map[string]Protocol
 	Mattermost         map[string]Protocol
@@ -86,8 +99,10 @@ type Config struct {
 	Discord            map[string]Protocol
 	Telegram           map[string]Protocol
 	Rocketchat         map[string]Protocol
+	Web                map[string]Protocol
 	General            Protocol
 	Gateway            []Gateway
+	WebGateway         WebGateway
 	SameChannelGateway []SameChannelGateway
 }
 
