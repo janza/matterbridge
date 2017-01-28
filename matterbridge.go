@@ -10,7 +10,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-var version = "0.9.2-dev"
+var version = "0.9.2"
 
 func init() {
 	log.SetLevel(log.DebugLevel)
