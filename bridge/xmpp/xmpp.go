@@ -5,7 +5,6 @@ import (
 	"github.com/42wim/matterbridge/bridge/config"
 	log "github.com/Sirupsen/logrus"
 	"github.com/mattn/go-xmpp"
-
 	"strings"
 	"time"
 )
@@ -144,6 +143,14 @@ func (b *Bxmpp) getUsername(v xmpp.Chat) string {
 	return b.KnownUsers[resource]
 }
 
+func (b *Bxmpp) getUsernameFromJid(jid string) string {
+	node, server, resource := b.parseJid(jid)
+	if server == b.Config.Muc {
+		return resource
+	}
+	return node
+}
+
 func (b *Bxmpp) getChannel(v xmpp.Chat) string {
 	node, domain, _ := b.parseJid(v.Remote)
 	if v.Type == "chat" {
@@ -184,6 +191,13 @@ func (b *Bxmpp) handleXmpp() error {
 				b.KnownUsers[i.Name] = i.Jid
 				flog.Warnf("Adding to know users %s: %s", i.Name, i.Jid)
 			}
+		case xmpp.Presence:
+			if v.MucJid == "" {
+				continue
+			}
+			nick := b.getUsernameFromJid(v.From)
+			b.KnownUsers[nick] = v.MucJid
+			flog.Warnf("Adding to know users %s: %s", nick, v.MucJid)
 		}
 	}
 }
