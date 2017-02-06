@@ -14,7 +14,11 @@ type Bweb struct {
 	BindAddress string
 	Account     string
 	Messages    chan config.Message
+	Users       chan config.User
+	Channels    chan config.Channel
 	Remote      chan config.Message
+	Commands    chan string
+	count       int
 }
 
 const (
@@ -25,7 +29,7 @@ const (
 	pongWait = 60 * time.Second
 
 	// Send pings to client with this period. Must be less than pongWait.
-	pingPeriod = (pongWait * 9) / 10
+	pingPeriod = pongWait * 9 / 10
 )
 
 var (
@@ -37,12 +41,16 @@ func init() {
 	flog = log.WithFields(log.Fields{"module": "web"})
 }
 
-func New(cfg config.Protocol, account string, c chan config.Message) *Bweb {
+func New(cfg config.Protocol, account string, c config.Comms) *Bweb {
 	b := &Bweb{}
 	b.BindAddress = cfg.BindAddress
 	b.Messages = make(chan config.Message)
+	b.Users = make(chan config.User)
+	b.Channels = make(chan config.Channel)
+
 	b.Account = account
-	b.Remote = c
+	b.Remote = c.Messages
+	b.Commands = c.Commands
 	flog.Infof("Creating new websocket server %s", cfg.BindAddress)
 	return b
 }
@@ -61,15 +69,38 @@ func (b *Bweb) Send(msg config.Message) error {
 	return nil
 }
 
+func (b *Bweb) Presence(user config.User) error {
+	b.Users <- user
+	return nil
+}
+
+func (b *Bweb) Discovery(channel config.Channel) error {
+	b.Channels <- channel
+	return nil
+}
+
 func (b *Bweb) ReqWrite(ws *websocket.Conn) {
 	pingTicker := time.NewTicker(pingPeriod)
 	defer func() {
+		log.Printf("Write closing")
 		pingTicker.Stop()
 		ws.Close()
+		log.Printf("Closed")
 	}()
+	log.Printf("WriteReq running %d", b.count)
 	for {
 		select {
 		case msg := <-b.Messages:
+			err := ws.WriteJSON(msg)
+			if err != nil {
+				return
+			}
+		case msg := <-b.Users:
+			err := ws.WriteJSON(msg)
+			if err != nil {
+				return
+			}
+		case msg := <-b.Channels:
 			err := ws.WriteJSON(msg)
 			if err != nil {
 				return
@@ -84,17 +115,23 @@ func (b *Bweb) ReqWrite(ws *websocket.Conn) {
 }
 
 func (b *Bweb) ReqRead(ws *websocket.Conn) {
-	defer ws.Close()
-	ws.SetReadLimit(512)
+	defer func() {
+		log.Printf("Read closing")
+		ws.Close()
+	}()
 	ws.SetReadDeadline(time.Now().Add(pongWait))
+	log.Printf("ReqRead running")
 	ws.SetPongHandler(func(string) error {
 		ws.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 	for {
+		log.Printf("waiting for message")
 		_, jsonMsg, err := ws.ReadMessage()
+		log.Printf("message received %s", jsonMsg)
 		if err != nil {
-			break
+			log.Printf("failed to read message %s", err)
+			return
 		}
 		msg := &config.Message{}
 		err = json.Unmarshal(jsonMsg, msg)
@@ -111,19 +148,22 @@ func (b *Bweb) ReqRead(ws *websocket.Conn) {
 }
 
 func (b *Bweb) HandleRequest(res http.ResponseWriter, req *http.Request) {
+	log.Printf("Request start")
 	ws, err := upgrader.Upgrade(res, req, nil)
 	if err != nil {
-		log.Print("upgrade:", err)
+		log.Print("upgrade err:", err)
 		return
 	}
-	defer ws.Close()
+	b.count = b.count + 1
 
 	go b.ReqWrite(ws)
 	b.ReqRead(ws)
+	log.Printf("Request end")
 }
 
 func (b *Bweb) Listen() error {
-	http.HandleFunc("/", b.HandleRequest)
-	flog.Printf("Starting websocket server on %s", b.BindAddress)
+	http.HandleFunc("/ws", b.HandleRequest)
+	http.Handle("/", http.FileServer(http.Dir("web/dist")))
+	flog.Printf("Starting web server on %s", b.BindAddress)
 	return http.ListenAndServe(b.BindAddress, nil)
 }

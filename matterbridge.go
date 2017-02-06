@@ -58,8 +58,6 @@ func main() {
 		}
 	}
 
-	fmt.Printf("config: %v\n", cfg.WebGateway)
-
 	if len(cfg.WebGateway.Accounts) != 0 {
 		webgateway.New(cfg, &cfg.WebGateway)
 	}

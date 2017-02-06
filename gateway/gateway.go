@@ -18,7 +18,7 @@ type Gateway struct {
 	ChannelsIn     map[string][]string
 	ChannelOptions map[string]config.ChannelOptions
 	Name           string
-	Message        chan config.Message
+	Comms          config.Comms
 }
 
 func New(cfg *config.Config, gateway *config.Gateway) *Gateway {
@@ -26,7 +26,11 @@ func New(cfg *config.Config, gateway *config.Gateway) *Gateway {
 	gw.Name = gateway.Name
 	gw.Config = cfg
 	gw.MyConfig = gateway
-	gw.Message = make(chan config.Message)
+	c := config.Comms{}
+	c.Messages = make(chan config.Message)
+	c.Users = make(chan config.User)
+	c.Channels = make(chan config.Channel)
+	gw.Comms = c
 	gw.Bridges = make(map[string]*bridge.Bridge)
 	return gw
 }
@@ -38,7 +42,7 @@ func (gw *Gateway) AddBridge(cfg *config.Bridge) error {
 		}
 	}
 	log.Infof("Starting bridge: %s ", cfg.Account)
-	br := bridge.New(gw.Config, cfg, gw.Message)
+	br := bridge.New(gw.Config, cfg, gw.Comms)
 	gw.Bridges[cfg.Account] = br
 	err := br.Connect()
 	if err != nil {
@@ -75,7 +79,7 @@ func (gw *Gateway) Start() error {
 func (gw *Gateway) handleReceive() {
 	for {
 		select {
-		case msg := <-gw.Message:
+		case msg := <-gw.Comms.Messages:
 			if !gw.ignoreMessage(&msg) {
 				for _, br := range gw.Bridges {
 					gw.handleMessage(msg, br)

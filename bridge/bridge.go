@@ -10,7 +10,6 @@ import (
 	"github.com/42wim/matterbridge/bridge/slack"
 	"github.com/42wim/matterbridge/bridge/telegram"
 	"github.com/42wim/matterbridge/bridge/xmpp"
-	"github.com/42wim/matterbridge/bridge/web"
 	"strings"
 )
 
@@ -28,7 +27,7 @@ type Bridge struct {
 	Protocol string
 }
 
-func New(cfg *config.Config, bridge *config.Bridge, c chan config.Message) *Bridge {
+func New(cfg *config.Config, bridge *config.Bridge, c config.Comms) *Bridge {
 	b := new(Bridge)
 	accInfo := strings.Split(bridge.Account, ".")
 	protocol := accInfo[0]
@@ -36,37 +35,35 @@ func New(cfg *config.Config, bridge *config.Bridge, c chan config.Message) *Brid
 	b.Name = name
 	b.Protocol = protocol
 	b.Account = bridge.Account
+	m := c.Messages
 
 	// override config from environment
 	config.OverrideCfgFromEnv(cfg, protocol, name)
 	switch protocol {
 	case "mattermost":
 		b.Config = cfg.Mattermost[name]
-		b.Bridger = bmattermost.New(cfg.Mattermost[name], bridge.Account, c)
+		b.Bridger = bmattermost.New(cfg.Mattermost[name], bridge.Account, m)
 	case "irc":
 		b.Config = cfg.IRC[name]
-		b.Bridger = birc.New(cfg.IRC[name], bridge.Account, c)
+		b.Bridger = birc.New(cfg.IRC[name], bridge.Account, m)
 	case "gitter":
 		b.Config = cfg.Gitter[name]
-		b.Bridger = bgitter.New(cfg.Gitter[name], bridge.Account, c)
+		b.Bridger = bgitter.New(cfg.Gitter[name], bridge.Account, m)
 	case "slack":
 		b.Config = cfg.Slack[name]
-		b.Bridger = bslack.New(cfg.Slack[name], bridge.Account, c)
+		b.Bridger = bslack.New(cfg.Slack[name], bridge.Account, m)
 	case "xmpp":
 		b.Config = cfg.Xmpp[name]
 		b.Bridger = bxmpp.New(cfg.Xmpp[name], bridge.Account, c)
 	case "discord":
 		b.Config = cfg.Discord[name]
-		b.Bridger = bdiscord.New(cfg.Discord[name], bridge.Account, c)
+		b.Bridger = bdiscord.New(cfg.Discord[name], bridge.Account, m)
 	case "telegram":
 		b.Config = cfg.Telegram[name]
-		b.Bridger = btelegram.New(cfg.Telegram[name], bridge.Account, c)
+		b.Bridger = btelegram.New(cfg.Telegram[name], bridge.Account, m)
 	case "rocketchat":
 		b.Config = cfg.Rocketchat[name]
-		b.Bridger = brocketchat.New(cfg.Rocketchat[name], bridge.Account, c)
-	case "web":
-		b.Config = cfg.Web[name]
-		b.Bridger = bweb.New(cfg.Web[name], bridge.Account, c)
+		b.Bridger = brocketchat.New(cfg.Rocketchat[name], bridge.Account, m)
 	}
 	return b
 }

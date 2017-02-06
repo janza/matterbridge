@@ -23,6 +23,29 @@ type Message struct {
 	IsPriv   bool
 }
 
+type User struct {
+	User   string
+	Origin string
+}
+
+type Channel struct {
+	Channel string
+	Origin  string
+}
+
+type Command struct {
+	Command string
+	Origin  string
+}
+
+type Comms struct {
+	Messages   chan Message
+	MessageLog chan Message
+	Users      chan User
+	Channels   chan Channel
+	Commands   chan string
+}
+
 type Protocol struct {
 	BindAddress            string // mattermost, slack, web
 	IconURL                string // mattermost, slack
@@ -44,6 +67,7 @@ type Protocol struct {
 	MessageDelay           int    // IRC, time in millisecond to wait between messages
 	RemoteNickFormat       string // all protocols
 	Server                 string // IRC,mattermost,XMPP,discord
+	TLSServerName          string // IRC,mattermost,XMPP,discord
 	ShowJoinPart           bool   // all protocols
 	SkipTLSVerify          bool   // IRC, mattermost
 	Team                   string // mattermost
@@ -100,6 +124,7 @@ type Config struct {
 	Telegram           map[string]Protocol
 	Rocketchat         map[string]Protocol
 	Web                map[string]Protocol
+	Disk               map[string]Protocol
 	General            Protocol
 	Gateway            []Gateway
 	WebGateway         WebGateway

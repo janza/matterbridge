@@ -17,7 +17,11 @@ type SameChannelGateway struct {
 }
 
 func New(cfg *config.Config, gateway *config.SameChannelGateway) error {
-	c := make(chan config.Message)
+	c := config.Comms{}
+	c.Messages = make(chan config.Message)
+	c.Users = make(chan config.User)
+	c.Channels = make(chan config.Channel)
+
 	gw := &SameChannelGateway{}
 	gw.Bridges = make(map[string]*bridge.Bridge)
 	gw.Name = gateway.Name
@@ -39,7 +43,7 @@ func New(cfg *config.Config, gateway *config.SameChannelGateway) error {
 			br.JoinChannel(channel)
 		}
 	}
-	gw.handleReceive(c)
+	gw.handleReceive(c.Messages)
 	return nil
 }
 

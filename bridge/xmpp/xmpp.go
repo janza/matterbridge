@@ -14,6 +14,8 @@ type Bxmpp struct {
 	xmppMap    map[string]string
 	Config     *config.Protocol
 	Remote     chan config.Message
+	Channels   chan config.Channel
+	Users      chan config.User
 	Account    string
 	KnownUsers map[string]string
 }
@@ -25,12 +27,15 @@ func init() {
 	flog = log.WithFields(log.Fields{"module": protocol})
 }
 
-func New(cfg config.Protocol, account string, c chan config.Message) *Bxmpp {
+func New(cfg config.Protocol, account string, c config.Comms) *Bxmpp {
 	b := &Bxmpp{}
 	b.xmppMap = make(map[string]string)
 	b.Config = &cfg
 	b.Account = account
-	b.Remote = c
+
+	b.Remote = c.Messages
+	b.Channels = c.Channels
+	b.Users = c.Users
 	b.KnownUsers = make(map[string]string)
 	return b
 }
@@ -45,12 +50,16 @@ func (b *Bxmpp) Connect() error {
 	}
 	flog.Info("Connection succeeded")
 	b.xc.Roster()
-	go b.handleXmpp()
+	go b.handleXMPP()
 	return nil
 }
 
 func (b *Bxmpp) JoinChannel(channel string) error {
-	b.xc.JoinMUCNoHistory(channel+"@"+b.Config.Muc, b.Config.Nick)
+	fullChannelName := channel + "@" + b.Config.Muc
+	b.xc.JoinMUCNoHistory(fullChannelName, b.Config.Nick)
+	b.Channels <- config.Channel{
+		Channel: fullChannelName,
+	}
 	return nil
 }
 
@@ -78,6 +87,9 @@ func (b *Bxmpp) createXMPP() (*xmpp.Client, error) {
 	tc := new(tls.Config)
 	tc.InsecureSkipVerify = b.Config.SkipTLSVerify
 	tc.ServerName = strings.Split(b.Config.Server, ":")[0]
+	if b.Config.TLSServerName != "" {
+		tc.ServerName = b.Config.TLSServerName
+	}
 	options := xmpp.Options{
 		Host:      b.Config.Server,
 		User:      b.Config.Jid,
@@ -159,9 +171,12 @@ func (b *Bxmpp) getChannel(v xmpp.Chat) string {
 	return node
 }
 
-func (b *Bxmpp) handleXmpp() error {
+func (b *Bxmpp) handleXMPP() error {
 	done := b.xmppKeepAlive()
-	defer close(done)
+	defer func() {
+		close(done)
+		b.Connect()
+	}()
 	for {
 		m, err := b.xc.Recv()
 		if err != nil {
@@ -189,6 +204,9 @@ func (b *Bxmpp) handleXmpp() error {
 		case xmpp.IQ:
 			for _, i := range v.ClientQuery.Item {
 				b.KnownUsers[i.Name] = i.Jid
+				b.Users <- config.User{
+					User: i.Jid,
+				}
 				flog.Warnf("Adding to know users %s: %s", i.Name, i.Jid)
 			}
 		case xmpp.Presence:
@@ -197,6 +215,9 @@ func (b *Bxmpp) handleXmpp() error {
 			}
 			nick := b.getUsernameFromJid(v.From)
 			b.KnownUsers[nick] = v.MucJid
+			b.Users <- config.User{
+				User: v.MucJid,
+			}
 			flog.Warnf("Adding to know users %s: %s", nick, v.MucJid)
 		}
 	}
