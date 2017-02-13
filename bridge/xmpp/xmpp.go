@@ -57,9 +57,11 @@ func (b *Bxmpp) Connect() error {
 func (b *Bxmpp) JoinChannel(channel string) error {
 	fullChannelName := channel + "@" + b.Config.Muc
 	b.xc.JoinMUCNoHistory(fullChannelName, b.Config.Nick)
+	flog.Debugf("Adding channel %s", channel)
 	b.Channels <- config.Channel{
 		Channel: fullChannelName,
 	}
+	flog.Debugf("Added channel %s", channel)
 	return nil
 }
 
@@ -203,22 +205,22 @@ func (b *Bxmpp) handleXMPP() error {
 			}
 		case xmpp.IQ:
 			for _, i := range v.ClientQuery.Item {
+				flog.Warnf("Adding to know users %s: %s", i.Name, i.Jid)
 				b.KnownUsers[i.Name] = i.Jid
 				b.Users <- config.User{
 					User: i.Jid,
 				}
-				flog.Warnf("Adding to know users %s: %s", i.Name, i.Jid)
 			}
 		case xmpp.Presence:
 			if v.MucJid == "" {
 				continue
 			}
 			nick := b.getUsernameFromJid(v.From)
+			flog.Warnf("Adding to know users %s: %s", nick, v.MucJid)
 			b.KnownUsers[nick] = v.MucJid
 			b.Users <- config.User{
 				User: v.MucJid,
 			}
-			flog.Warnf("Adding to know users %s: %s", nick, v.MucJid)
 		}
 	}
 }

@@ -65,29 +65,35 @@ func (b *Bweb) JoinChannel(s string) error {
 }
 
 func (b *Bweb) Send(msg config.Message) error {
-	b.Messages <- msg
+	go func() {
+		b.Messages <- msg
+	}()
 	return nil
 }
 
 func (b *Bweb) Presence(user config.User) error {
-	b.Users <- user
+	go func() {
+		b.Users <- user
+	}()
 	return nil
 }
 
 func (b *Bweb) Discovery(channel config.Channel) error {
-	b.Channels <- channel
+	go func() {
+		b.Channels <- channel
+	}()
 	return nil
 }
 
 func (b *Bweb) ReqWrite(ws *websocket.Conn) {
 	pingTicker := time.NewTicker(pingPeriod)
 	defer func() {
-		log.Printf("Write closing")
+		flog.Printf("Write closing")
 		pingTicker.Stop()
 		ws.Close()
-		log.Printf("Closed")
+		flog.Printf("Closed")
 	}()
-	log.Printf("WriteReq running %d", b.count)
+	flog.Printf("WriteReq running %d", b.count)
 	for {
 		select {
 		case msg := <-b.Messages:
@@ -116,21 +122,21 @@ func (b *Bweb) ReqWrite(ws *websocket.Conn) {
 
 func (b *Bweb) ReqRead(ws *websocket.Conn) {
 	defer func() {
-		log.Printf("Read closing")
+		flog.Printf("Read closing")
 		ws.Close()
 	}()
 	ws.SetReadDeadline(time.Now().Add(pongWait))
-	log.Printf("ReqRead running")
+	flog.Printf("ReqRead running")
 	ws.SetPongHandler(func(string) error {
 		ws.SetReadDeadline(time.Now().Add(pongWait))
 		return nil
 	})
 	for {
-		log.Printf("waiting for message")
+		flog.Printf("waiting for message")
 		_, jsonMsg, err := ws.ReadMessage()
-		log.Printf("message received %s", jsonMsg)
+		flog.Printf("message received %s", jsonMsg)
 		if err != nil {
-			log.Printf("failed to read message %s", err)
+			flog.Printf("failed to read message %s", err)
 			return
 		}
 		msg := &config.Message{}
@@ -148,22 +154,24 @@ func (b *Bweb) ReqRead(ws *websocket.Conn) {
 }
 
 func (b *Bweb) HandleRequest(res http.ResponseWriter, req *http.Request) {
-	log.Printf("Request start")
+	flog.Printf("Request start")
 	ws, err := upgrader.Upgrade(res, req, nil)
 	if err != nil {
-		log.Print("upgrade err:", err)
+		flog.Print("upgrade err:", err)
 		return
 	}
 	b.count = b.count + 1
 
+	b.Commands <- "get messages"
+
 	go b.ReqWrite(ws)
 	b.ReqRead(ws)
-	log.Printf("Request end")
+	flog.Printf("Request end")
 }
 
 func (b *Bweb) Listen() error {
 	http.HandleFunc("/ws", b.HandleRequest)
 	http.Handle("/", http.FileServer(http.Dir("web/dist")))
 	flog.Printf("Starting web server on %s", b.BindAddress)
-	return http.ListenAndServe(b.BindAddress, nil)
+	return http.ListenAndServe("127.0.0.1:8001", nil)
 }

@@ -9,6 +9,14 @@ import (
 	// "strings"
 )
 
+var (
+	flog *log.Entry
+)
+
+func init() {
+	flog = log.WithFields(log.Fields{"module": "gateway"})
+}
+
 type WebGateway struct {
 	*config.Config
 	MyConfig   *config.WebGateway
@@ -20,10 +28,11 @@ type WebGateway struct {
 
 func New(cfg *config.Config, gateway *config.WebGateway) error {
 	c := config.Comms{}
-	c.Messages = make(chan config.Message)
-	c.Users = make(chan config.User)
-	c.Channels = make(chan config.Channel)
-	c.Commands = make(chan string)
+	c.Messages = make(chan config.Message, 10)
+	c.Users = make(chan config.User, 10)
+	c.Channels = make(chan config.Channel, 10)
+	c.MessageLog = make(chan config.Message, 10)
+	c.Commands = make(chan string, 10)
 	gw := &WebGateway{}
 	gw.Bridges = make(map[string]*bridge.Bridge)
 	gw.Config = cfg
@@ -36,21 +45,21 @@ func New(cfg *config.Config, gateway *config.WebGateway) error {
 
 	for _, account := range gateway.Accounts {
 		br := config.Bridge{Account: account.Account}
-		log.Infof("Starting bridge: %s", account.Account)
+		flog.Infof("Starting bridge: %s", account.Account)
 		gw.Bridges[account.Account] = bridge.New(cfg, &br, c)
 	}
 
 	for _, br := range gw.Bridges {
 		err := br.Connect()
 		if err != nil {
-			log.Fatalf("Bridge %s failed to start: %v", br.Account, err)
+			flog.Fatalf("Bridge %s failed to start: %v", br.Account, err)
 		}
 		for _, account := range gateway.Accounts {
 			if account.Account != br.Account {
 				continue
 			}
 			for _, channel := range account.Channels {
-				log.Infof("%s: joining %s", br.Account, channel)
+				flog.Infof("%s: joining %s", br.Account, channel)
 				br.JoinChannel(channel)
 			}
 		}
@@ -62,27 +71,43 @@ func New(cfg *config.Config, gateway *config.WebGateway) error {
 
 func (gw *WebGateway) handleReceive(c config.Comms) {
 	for {
+		flog.Debug("Waiting for comms")
 		select {
 		case msg := <-c.Messages:
+			flog.Debugf("Got message %#v", msg)
 			gw.handleMessage(msg)
 		case user := <-c.Users:
+			flog.Debugf("Got user presence %#v", user)
 			gw.handleUser(user)
 		case channel := <-c.Channels:
+			flog.Debugf("Got channel %#v", channel)
 			gw.handleChannel(channel)
 		case cmd := <-c.Commands:
+			flog.Debugf("Got command %#v", cmd)
 			gw.handleCommand(cmd)
 		case msg := <-c.MessageLog:
+			flog.Debugf("Got message from log %#v", msg)
 			gw.handleLog(msg)
 		}
 	}
 }
 
 func (gw *WebGateway) handleUser(user config.User) {
-	gw.DiskBridge.Presence(user)
+	switch user.Origin {
+	case "disk":
+		gw.WebBridge.Presence(user)
+	default:
+		gw.DiskBridge.Presence(user)
+	}
 }
 
 func (gw *WebGateway) handleChannel(channel config.Channel) {
-	gw.DiskBridge.Discovery(channel)
+	switch channel.Origin {
+	case "disk":
+		gw.WebBridge.Discovery(channel)
+	default:
+		gw.DiskBridge.Discovery(channel)
+	}
 }
 
 func (gw *WebGateway) handleCommand(cmd string) {
@@ -90,27 +115,29 @@ func (gw *WebGateway) handleCommand(cmd string) {
 }
 
 func (gw *WebGateway) handleLog(msg config.Message) {
+	flog.Debugf("Got message log message %#v", msg)
 	gw.WebBridge.Send(msg)
 }
 
 func (gw *WebGateway) handleMessage(msg config.Message) {
-	log.Debugf("Got message from %s: %s", msg.Account, msg.Text)
+	flog.Debugf("Got message from %s: %s", msg.Account, msg.Text)
 	if err := gw.DiskBridge.Send(msg); err != nil {
-		log.Error(err)
+		flog.Error(err)
 	}
 	if msg.Account == gw.WebBridge.Account {
 		targetBridge := gw.Bridges[msg.To]
 		if targetBridge != nil {
 			if err := targetBridge.Send(msg); err != nil {
-				log.Error(err)
+				flog.Error(err)
 			}
 		} else {
-			log.Errorf("Bridge not found %s", msg.To)
+			flog.Errorf("Bridge not found %s", msg.To)
 		}
 		return
 	}
-	log.Debugf("Sending %#v from %s (%s)", msg, msg.Account, msg.Channel)
+	flog.Debugf("Sending %#v from %s (%s)", msg, msg.Account, msg.Channel)
 	if err := gw.WebBridge.Send(msg); err != nil {
-		log.Error(err)
+		flog.Error(err)
 	}
+	flog.Debug("Sent message")
 }
