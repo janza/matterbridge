@@ -54,6 +54,10 @@ func (b *Bxmpp) Connect() error {
 	return nil
 }
 
+func (b *Bxmpp) Disconnect() error {
+	return nil
+}
+
 func (b *Bxmpp) JoinChannel(channel string) error {
 	fullChannelName := channel + "@" + b.Config.Muc
 	b.xc.JoinMUCNoHistory(fullChannelName, b.Config.Nick)
