@@ -44,10 +44,8 @@ func (gw *Gateway) AddBridge(cfg *config.Bridge) error {
 	}
 	log.Infof("Starting bridge: %s ", cfg.Account)
 	br := bridge.New(gw.Config, cfg, gw.Comms)
-	br.ChannelsOut = gw.ChannelsOut[br.Account]
-	br.ChannelsIn = gw.ChannelsIn[br.Account]
-	br.ChannelOptions = gw.ChannelOptions[br.Account]
-
+	gw.mapChannelsToBridge(br, gw.ChannelsOut)
+	gw.mapChannelsToBridge(br, gw.ChannelsIn)
 	gw.Bridges[cfg.Account] = br
 	err := br.Connect()
 	if err != nil {
@@ -55,6 +53,16 @@ func (gw *Gateway) AddBridge(cfg *config.Bridge) error {
 	}
 	br.JoinChannels()
 	return nil
+}
+
+func (gw *Gateway) mapChannelsToBridge(br *bridge.Bridge, cMap map[string][]string) {
+	for _, channel := range cMap[br.Account] {
+		if _, ok := gw.ChannelOptions[br.Account+channel]; ok {
+			br.ChannelsOut[channel] = gw.ChannelOptions[br.Account+channel]
+		} else {
+			br.ChannelsOut[channel] = config.ChannelOptions{}
+		}
+	}
 }
 
 func (gw *Gateway) Start() error {
