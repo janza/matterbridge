@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"github.com/42wim/matterbridge/bridge/api"
 	"github.com/42wim/matterbridge/bridge/config"
 	"github.com/42wim/matterbridge/bridge/discord"
 	"github.com/42wim/matterbridge/bridge/gitter"
@@ -71,6 +72,9 @@ func New(cfg *config.Config, bridge *config.Bridge, c config.Comms) *Bridge {
 	case "rocketchat":
 		b.Config = cfg.Rocketchat[name]
 		b.Bridger = brocketchat.New(cfg.Rocketchat[name], bridge.Account, m)
+	case "api":
+		b.Config = cfg.Api[name]
+		b.Bridger = api.New(cfg.Api[name], bridge.Account, m)
 	}
 	return b
 }
