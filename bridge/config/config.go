@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"github.com/BurntSushi/toml"
 	"log"
 	"os"
@@ -28,12 +29,17 @@ type Message struct {
 }
 
 type User struct {
-	User   string
-	Origin string
+	ID      string
+	User    string
+	Name    string
+	Account string
+	Origin  string
 }
 
 type Channel struct {
+	ID      string
 	Channel string
+	Account string
 	Origin  string
 }
 
@@ -135,6 +141,23 @@ type Config struct {
 	Gateway            []Gateway
 	WebGateway         WebGateway
 	SameChannelGateway []SameChannelGateway
+}
+
+func NewUser(id, account, name string) User {
+	return User{
+		ID:      fmt.Sprintf("%s:%s", id, account),
+		User:    id,
+		Account: account,
+		Name:    name,
+	}
+}
+
+func NewChannel(id, account string) Channel {
+	return Channel{
+		ID:      fmt.Sprintf("%s:%s", id, account),
+		Channel: id,
+		Account: account,
+	}
 }
 
 func NewConfig(cfgfile string) *Config {

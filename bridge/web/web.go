@@ -2,7 +2,6 @@ package bweb
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/42wim/matterbridge/bridge/config"
 	log "github.com/Sirupsen/logrus"
 	"github.com/gorilla/websocket"
@@ -17,8 +16,16 @@ type Bweb struct {
 	Users       chan config.User
 	Channels    chan config.Channel
 	Remote      chan config.Message
+	Hub         *Hub
 	Commands    chan string
 	count       int
+}
+
+type WireMessage struct {
+	Type    string
+	Message config.Message
+	User    config.User
+	Channel config.Channel
 }
 
 const (
@@ -30,11 +37,18 @@ const (
 
 	// Send pings to client with this period. Must be less than pongWait.
 	pingPeriod = pongWait * 9 / 10
+
+	// Maximum message size allowed from peer.
+	maxMessageSize = 512
 )
 
 var (
+	newline  = []byte{'\n'}
 	flog     *log.Entry
-	upgrader = websocket.Upgrader{}
+	upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+	}
 )
 
 func init() {
@@ -85,93 +99,203 @@ func (b *Bweb) Discovery(channel config.Channel) error {
 	return nil
 }
 
-func (b *Bweb) ReqWrite(ws *websocket.Conn) {
-	pingTicker := time.NewTicker(pingPeriod)
-	defer func() {
-		flog.Printf("Write closing")
-		pingTicker.Stop()
-		ws.Close()
-		flog.Printf("Closed")
-	}()
-	flog.Printf("WriteReq running %d", b.count)
+func (b *Bweb) serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	client := &Client{
+		hub:     hub,
+		conn:    conn,
+		account: b.Account,
+		remote:  b.Remote,
+		send:    make(chan []byte, 256),
+	}
+	client.hub.register <- client
+	go client.writePump()
+	client.readPump()
+}
+
+func (b *Bweb) Run() {
 	for {
 		select {
 		case msg := <-b.Messages:
-			err := ws.WriteJSON(msg)
+			json, err := json.Marshal(WireMessage{
+				Type:    "message",
+				Message: msg,
+			})
 			if err != nil {
-				return
+				panic(err)
 			}
+			b.Hub.broadcast <- json
 		case msg := <-b.Users:
-			err := ws.WriteJSON(msg)
+			json, err := json.Marshal(WireMessage{
+				Type: "user",
+				User: msg,
+			})
 			if err != nil {
-				return
+				panic(err)
 			}
+			b.Hub.broadcast <- json
 		case msg := <-b.Channels:
-			err := ws.WriteJSON(msg)
+			json, err := json.Marshal(WireMessage{
+				Type:    "channel",
+				Channel: msg,
+			})
 			if err != nil {
-				return
+				panic(err)
 			}
-		case <-pingTicker.C:
-			ws.SetWriteDeadline(time.Now().Add(writeWait))
-			if err := ws.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
-				return
-			}
+			b.Hub.broadcast <- json
 		}
 	}
-}
-
-func (b *Bweb) ReqRead(ws *websocket.Conn) {
-	defer func() {
-		flog.Printf("Read closing")
-		ws.Close()
-	}()
-	ws.SetReadDeadline(time.Now().Add(pongWait))
-	flog.Printf("ReqRead running")
-	ws.SetPongHandler(func(string) error {
-		ws.SetReadDeadline(time.Now().Add(pongWait))
-		return nil
-	})
-	for {
-		flog.Printf("waiting for message")
-		_, jsonMsg, err := ws.ReadMessage()
-		flog.Printf("message received %s", jsonMsg)
-		if err != nil {
-			flog.Printf("failed to read message %s", err)
-			return
-		}
-		msg := &config.Message{}
-		err = json.Unmarshal(jsonMsg, msg)
-		if err != nil {
-			ws.WriteMessage(
-				websocket.TextMessage,
-				[]byte(fmt.Sprintf("Failed to parse JSON: %s", err)))
-			continue
-		}
-		msg.Account = b.Account
-		msg.Username = "" // Empty for now
-		b.Remote <- *msg
-	}
-}
-
-func (b *Bweb) HandleRequest(res http.ResponseWriter, req *http.Request) {
-	flog.Printf("Request start")
-	ws, err := upgrader.Upgrade(res, req, nil)
-	if err != nil {
-		flog.Print("upgrade err:", err)
-		return
-	}
-	b.count = b.count + 1
-
-	b.Commands <- "get messages"
-
-	go b.ReqWrite(ws)
-	b.ReqRead(ws)
-	flog.Printf("Request end")
 }
 
 func (b *Bweb) Listen() error {
-	http.HandleFunc("/ws", b.HandleRequest)
+	b.Hub = newHub()
+	go b.Hub.run()
+	go b.Run()
 	http.Handle("/", http.FileServer(http.Dir("web/dist")))
-	flog.Printf("Starting web server on %s", b.BindAddress)
-	return http.ListenAndServe("127.0.0.1:8001", nil)
+	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		b.Commands <- "connected"
+		b.serveWs(b.Hub, w, r)
+	})
+	err := http.ListenAndServe("127.0.0.1:8001", nil)
+	return err
+}
+
+// Client is a middleman between the websocket connection and the hub.
+type Client struct {
+	hub *Hub
+
+	// The websocket connection.
+	conn *websocket.Conn
+
+	account string
+
+	remote chan config.Message
+
+	// Buffered channel of outbound messages.
+	send chan []byte
+}
+
+// readPump pumps messages from the websocket connection to the hub.
+//
+// The application runs readPump in a per-connection goroutine. The application
+// ensures that there is at most one reader on a connection by executing all
+// reads from this goroutine.
+func (c *Client) readPump() {
+	defer func() {
+		c.hub.unregister <- c
+		c.conn.Close()
+	}()
+	c.conn.SetReadLimit(maxMessageSize)
+	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+	for {
+		_, jsonMsg, err := c.conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+				log.Printf("error: %v", err)
+			}
+			break
+		}
+
+		msg := &config.Message{}
+		err = json.Unmarshal(jsonMsg, msg)
+		if err != nil {
+			log.Printf("unable to parse json: %s", jsonMsg)
+			continue
+		}
+		msg.Account = c.account
+		msg.Username = "" // Empty for now
+		c.remote <- *msg
+	}
+}
+
+// writePump pumps messages from the hub to the websocket connection.
+//
+// A goroutine running writePump is started for each connection. The
+// application ensures that there is at most one writer to a connection by
+// executing all writes from this goroutine.
+func (c *Client) writePump() {
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.conn.Close()
+	}()
+	for {
+		select {
+		case message, ok := <-c.send:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if !ok {
+				// The hub closed the channel.
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+
+			w, err := c.conn.NextWriter(websocket.TextMessage)
+			if err != nil {
+				return
+			}
+			w.Write(message)
+			if err := w.Close(); err != nil {
+				return
+			}
+		case <-ticker.C:
+			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.conn.WriteMessage(websocket.PingMessage, []byte{}); err != nil {
+				return
+			}
+		}
+	}
+}
+
+// hub maintains the set of active clients and broadcasts messages to the
+// clients.
+type Hub struct {
+	// Registered clients.
+	clients map[*Client]bool
+
+	// Inbound messages from the clients.
+	broadcast chan []byte
+
+	// Register requests from the clients.
+	register chan *Client
+
+	// Unregister requests from clients.
+	unregister chan *Client
+}
+
+func newHub() *Hub {
+	return &Hub{
+		broadcast:  make(chan []byte),
+		register:   make(chan *Client),
+		unregister: make(chan *Client),
+		clients:    make(map[*Client]bool),
+	}
+}
+
+func (h *Hub) run() {
+
+	for {
+		select {
+		case client := <-h.register:
+			h.clients[client] = true
+		case client := <-h.unregister:
+			if _, ok := h.clients[client]; ok {
+				delete(h.clients, client)
+				close(client.send)
+			}
+		case message := <-h.broadcast:
+			for client := range h.clients {
+				select {
+				case client.send <- message:
+				default:
+					close(client.send)
+					delete(h.clients, client)
+				}
+			}
+		}
+	}
 }

@@ -574,6 +574,7 @@ type IQ struct {
 	Type        string
 	Query       []byte
 	ClientQuery clientQuery
+	DiscoQuery  discoQuery
 }
 
 // Recv waits to receive the next XMPP stanza.
@@ -621,6 +622,7 @@ func (c *Client) Recv() (stanza interface{}, err error) {
 				Type:        v.Type,
 				Query:       v.Query,
 				ClientQuery: v.ClientQuery,
+				DiscoQuery:  v.DiscoQuery,
 			}, nil
 		}
 	}
@@ -814,6 +816,7 @@ type clientIQ struct { // info/query
 	To          string      `xml:"to,attr"`
 	Type        string      `xml:"type,attr"` // error, get, result, set
 	ClientQuery clientQuery `xml:"jabber:iq:roster query"`
+	DiscoQuery  discoQuery  `xml:"http://jabber.org/protocol/disco#items query"`
 	Query       []byte      `xml:",innerxml"`
 	Error       clientError
 	Bind        bindBind
@@ -831,12 +834,23 @@ type clientQuery struct {
 	Item []rosterItem `xml:"item"`
 }
 
+type discoQuery struct {
+	Item []discoItem `xml:"item"`
+}
+
 type rosterItem struct {
 	XMLName      xml.Name `xml:"jabber:iq:roster item"`
 	Jid          string   `xml:"jid,attr"`
 	Name         string   `xml:"name,attr"`
 	Subscription string   `xml:"subscription,attr"`
 	Group        []string
+}
+
+type discoItem struct {
+	XMLName xml.Name `xml:"http://jabber.org/protocol/disco#items item"`
+	Jid     string   `xml:"jid,attr"`
+	Name    string   `xml:"name,attr"`
+	Group   []string
 }
 
 // Scan XML token stream to find next StartElement.

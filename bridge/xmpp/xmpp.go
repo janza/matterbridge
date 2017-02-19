@@ -50,6 +50,7 @@ func (b *Bxmpp) Connect() error {
 	}
 	flog.Info("Connection succeeded")
 	b.xc.Roster()
+	b.xc.RawInformationQuery(b.Config.Jid, b.Config.Muc, "onetwo", "get", "http://jabber.org/protocol/disco#items", "")
 	go b.handleXMPP()
 	return nil
 }
@@ -62,9 +63,7 @@ func (b *Bxmpp) JoinChannel(channel string) error {
 	fullChannelName := channel + "@" + b.Config.Muc
 	b.xc.JoinMUCNoHistory(fullChannelName, b.Config.Nick)
 	flog.Debugf("Adding channel %s", channel)
-	b.Channels <- config.Channel{
-		Channel: fullChannelName,
-	}
+	b.Channels <- config.NewChannel(channel, b.Account)
 	flog.Debugf("Added channel %s", channel)
 	return nil
 }
@@ -186,6 +185,7 @@ func (b *Bxmpp) handleXMPP() error {
 	for {
 		m, err := b.xc.Recv()
 		if err != nil {
+			flog.Error(err)
 			return err
 		}
 
@@ -209,11 +209,12 @@ func (b *Bxmpp) handleXMPP() error {
 			}
 		case xmpp.IQ:
 			for _, i := range v.ClientQuery.Item {
-				flog.Warnf("Adding to know users %s: %s", i.Name, i.Jid)
 				b.KnownUsers[i.Name] = i.Jid
-				b.Users <- config.User{
-					User: i.Jid,
-				}
+				b.Users <- config.NewUser(i.Jid, b.Account, i.Name)
+			}
+			flog.Info(string(v.Query))
+			for _, i := range v.DiscoQuery.Item {
+				b.Channels <- config.NewChannel(i.Name, b.Account)
 			}
 		case xmpp.Presence:
 			if v.MucJid == "" {
@@ -222,9 +223,7 @@ func (b *Bxmpp) handleXMPP() error {
 			nick := b.getUsernameFromJid(v.From)
 			flog.Warnf("Adding to know users %s: %s", nick, v.MucJid)
 			b.KnownUsers[nick] = v.MucJid
-			b.Users <- config.User{
-				User: v.MucJid,
-			}
+			b.Users <- config.NewUser(v.MucJid, b.Account, nick)
 		}
 	}
 }

@@ -71,7 +71,6 @@ func New(cfg *config.Config, gateway *config.WebGateway) error {
 
 func (gw *WebGateway) handleReceive(c config.Comms) {
 	for {
-		flog.Debug("Waiting for comms")
 		select {
 		case msg := <-c.Messages:
 			flog.Debugf("Got message %#v", msg)
@@ -93,21 +92,17 @@ func (gw *WebGateway) handleReceive(c config.Comms) {
 }
 
 func (gw *WebGateway) handleUser(user config.User) {
-	switch user.Origin {
-	case "disk":
-		gw.WebBridge.Presence(user)
-	default:
+	if user.Origin != "disk" {
 		gw.DiskBridge.Presence(user)
 	}
+	gw.WebBridge.Presence(user)
 }
 
 func (gw *WebGateway) handleChannel(channel config.Channel) {
-	switch channel.Origin {
-	case "disk":
-		gw.WebBridge.Discovery(channel)
-	default:
+	if channel.Origin != "disk" {
 		gw.DiskBridge.Discovery(channel)
 	}
+	gw.WebBridge.Discovery(channel)
 }
 
 func (gw *WebGateway) handleCommand(cmd string) {
@@ -131,7 +126,7 @@ func (gw *WebGateway) handleMessage(msg config.Message) {
 				flog.Error(err)
 			}
 		} else {
-			flog.Errorf("Bridge not found %s", msg.To)
+			flog.Errorf("Bridge not found: %s", msg.To)
 		}
 		return
 	}

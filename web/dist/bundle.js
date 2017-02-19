@@ -62,13 +62,11 @@
 
 	var ws = new WebSocket('ws://localhost:8001/ws');
 	var activeChannel = {};
+
 	var state = {
-	  messages: [{
-	    Username: 'josip',
-	    Text: 'hello world'
-	  }],
-	  activeChannel: 'test',
-	  channels: [{ account: 'blabla', channel: 'name' }],
+	  messages: [],
+	  activeChannel: '',
+	  channels: [],
 	  users: []
 	};
 
@@ -80,14 +78,22 @@
 	  };
 	};
 
-	ws.addEventListener('message', function (data, flags) {
-	  var message = JSON.parse(data.data);
+	ws.addEventListener('message', function (msg, flags) {
+	  var data = JSON.parse(msg.data);
 
-	  updateState(Object.assign({}, state, {
-	    messages: state.messages.concat([message]),
-	    channels: Array.from(new Set(state.channels.concat([newChannel(state.channels, message.Account, message.Channel)]))),
-	    users: Array.from(new Set(state.users.concat([message.Username])))
-	  }));
+	  if (data.Type === 'message') {
+	    updateState(Object.assign({}, state, {
+	      messages: state.messages.concat([data.Message])
+	    }));
+	  } else if (data.Type === 'user') {
+	    updateState(Object.assign({}, state, {
+	      users: Array.from(new Set(state.users.concat([data.User])))
+	    }));
+	  } else if (data.Type === 'channel') {
+	    updateState(Object.assign({}, state, {
+	      channels: Array.from(new Set(state.channels.concat([data.Channel])))
+	    }));
+	  }
 	});
 
 	ws.addEventListener('close', function () {
@@ -95,7 +101,7 @@
 	});
 
 	function updateState(newState) {
-	  state = newState;
+	  window.state = state = newState;
 	  redraw(state);
 	}
 
@@ -106,12 +112,13 @@
 	}
 
 	function sendMessage(_ref, text) {
-	  var account = _ref.account,
-	      channel = _ref.channel;
+	  var Account = _ref.Account,
+	      Channel = _ref.Channel,
+	      User = _ref.User;
 
 	  ws.send(JSON.stringify({
-	    Channel: channel,
-	    To: account,
+	    Channel: Channel || User,
+	    To: Account,
 	    Text: text
 	  }));
 	}
@@ -125,7 +132,7 @@
 	    _semanticUiReact.Comment.Group,
 	    { minimal: true },
 	    messages.filter(function (m) {
-	      return m.Channel === activeChannel.channel && m.Account === activeChannel.account;
+	      return (m.Channel === activeChannel.Channel || m.Channel === activeChannel.User) && (m.Account === activeChannel.Account || m.To === activeChannel.Account);
 	    }).map(function (message) {
 	      var differentUser = message.Username !== previousUsername;
 	      previousUsername = message.Username;
@@ -186,7 +193,7 @@
 	      var filter = e.target.value;
 	      this.setState({ filter: filter });
 	      var newActiveChannel = this.props.channels.filter(function (c) {
-	        return !_this2.state.filter || c.channel.indexOf(_this2.state.filter) >= 0 || c.account.indexOf(_this2.state.filter) >= 0;
+	        return !_this2.state.filter || c.ID.indexOf(_this2.state.filter) >= 0;
 	      })[0];
 
 	      if (!newActiveChannel) return;
@@ -221,16 +228,14 @@
 	          )
 	        ),
 	        channels.filter(function (c) {
-	          return !_this3.state.filter || c.channel.indexOf(_this3.state.filter) >= 0 || c.account.indexOf(_this3.state.filter) >= 0;
+	          return !_this3.state.filter || c.ID.indexOf(_this3.state.filter) >= 0;
 	        }).map(function (c) {
 	          return (0, _preact.h)(
 	            _semanticUiReact.Menu.Item,
 	            { onClick: function onClick() {
 	                return setActiveChannel(c);
 	              }, active: c == activeChannel },
-	            c.account,
-	            ' - ',
-	            c.channel
+	            c.Name || c.ID
 	          );
 	        })
 	      );
@@ -300,7 +305,7 @@
 	                  ref: function ref(el) {
 	                    return _this5.channels = el;
 	                  },
-	                  channels: state.channels,
+	                  channels: state.channels.concat(state.users),
 	                  activeChannel: state.activeChannel })
 	              ),
 	              (0, _preact.h)(

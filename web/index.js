@@ -15,13 +15,11 @@ import {HotKeys} from 'react-hotkeys'
 
 var ws = new WebSocket('ws://localhost:8001/ws')
 const activeChannel = {}
+
 var state = {
-  messages: [{
-    Username: 'josip',
-    Text: 'hello world'
-  }],
-  activeChannel: 'test',
-  channels: [{account: 'blabla', channel: 'name'}],
+  messages: [],
+  activeChannel: '',
+  channels: [],
   users: [],
 }
 
@@ -31,18 +29,28 @@ const newChannel = (channels, account, channel) => {
   };
 }
 
-ws.addEventListener('message', function (data, flags) {
-  const message = JSON.parse(data.data)
+ws.addEventListener('message', function (msg, flags) {
+  const data = JSON.parse(msg.data)
 
-  updateState(Object.assign({}, state, {
-    messages: state.messages.concat([message]),
-    channels: Array.from(new Set(state.channels.concat([
-      newChannel(state.channels, message.Account, message.Channel)
-    ]))),
-    users: Array.from(new Set(state.users.concat([
-      message.Username
-    ]))),
-  }))
+  if (data.Type === 'message') {
+    updateState(Object.assign({}, state, {
+      messages: state.messages.concat([
+        data.Message
+      ]),
+    }))
+  } else if (data.Type === 'user')  {
+    updateState(Object.assign({}, state, {
+      users: Array.from(new Set(state.users.concat([
+        data.User
+      ]))),
+    }))
+  } else if (data.Type === 'channel')  {
+    updateState(Object.assign({}, state, {
+      channels: Array.from(new Set(state.channels.concat([
+        data.Channel
+      ]))),
+    }))
+  }
 })
 
 ws.addEventListener('close', function () {
@@ -50,7 +58,7 @@ ws.addEventListener('close', function () {
 });
 
 function updateState (newState) {
-  state = newState
+  window.state = state = newState
   redraw(state)
 }
 
@@ -60,10 +68,10 @@ function setActiveChannel (channel) {
   }))
 }
 
-function sendMessage ({account, channel}, text) {
+function sendMessage ({Account, Channel, User}, text) {
   ws.send(JSON.stringify({
-    Channel: channel,
-    To: account,
+    Channel: Channel || User,
+    To: Account,
     Text: text
   }))
 }
@@ -72,7 +80,15 @@ const Feed = ({messages, activeChannel}) => {
   var previousUsername;
   return <Comment.Group minimal>
     { messages.filter(
-      m => m.Channel === activeChannel.channel && m.Account === activeChannel.account
+      m => {
+        return (
+          m.Channel === activeChannel.Channel
+          || m.Channel === activeChannel.User
+        ) && (
+          m.Account === activeChannel.Account
+          || m.To === activeChannel.Account
+        )
+      }
     ).map((message) => {
       const differentUser = message.Username !== previousUsername
       previousUsername = message.Username
@@ -111,9 +127,7 @@ class Channels extends Component {
     const filter = e.target.value
     this.setState({filter: filter})
     const newActiveChannel = this.props.channels.filter(c => {
-      return !this.state.filter
-        || c.channel.indexOf(this.state.filter) >= 0
-        || c.account.indexOf(this.state.filter) >= 0
+      return !this.state.filter || c.ID.indexOf(this.state.filter) >= 0
     })[0];
 
     if (!newActiveChannel) return
@@ -133,12 +147,10 @@ class Channels extends Component {
       </Menu.Item>
       {
         channels.filter(c => {
-          return !this.state.filter
-            || c.channel.indexOf(this.state.filter) >= 0
-            || c.account.indexOf(this.state.filter) >= 0
+          return !this.state.filter || c.ID.indexOf(this.state.filter) >= 0
         }).map(c => (
           <Menu.Item onClick={() => setActiveChannel(c)} active={c == activeChannel} >
-            {c.account} - {c.channel}
+            {c.Name || c.ID}
           </Menu.Item>
         ))
       }
@@ -175,7 +187,7 @@ class App extends Component {
             <Grid.Column width={3}>
               <Channels
                 ref={(el) => this.channels = el}
-                channels={state.channels}
+                channels={state.channels.concat(state.users)}
                 activeChannel={state.activeChannel} />
             </Grid.Column>
             <Grid.Column width={13}>
