@@ -128,7 +128,6 @@ func (gw *WebGateway) handleMessage(msg config.Message) {
 		} else {
 			flog.Errorf("Bridge not found: %s", msg.To)
 		}
-		return
 	}
 	flog.Debugf("Sending %#v from %s (%s)", msg, msg.Account, msg.Channel)
 	if err := gw.WebBridge.Send(msg); err != nil {
