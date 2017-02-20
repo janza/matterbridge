@@ -2,6 +2,7 @@ package bxmpp
 
 import (
 	"crypto/tls"
+	"encoding/xml"
 	"github.com/42wim/matterbridge/bridge/config"
 	log "github.com/Sirupsen/logrus"
 	"github.com/mattn/go-xmpp"
@@ -18,6 +19,11 @@ type Bxmpp struct {
 	Users      chan config.User
 	Account    string
 	KnownUsers map[string]string
+}
+
+type Invite struct {
+	XMLName xml.Name `xml:"invite"`
+	Reason  string   `xml:"reason"`
 }
 
 var flog *log.Entry
@@ -63,29 +69,30 @@ func (b *Bxmpp) JoinChannel(channel string) error {
 	fullChannelName := channel + "@" + b.Config.Muc
 	b.xc.JoinMUCNoHistory(fullChannelName, b.Config.Nick)
 	flog.Debugf("Adding channel %s", channel)
-	b.Channels <- config.NewChannel(channel, b.Account)
+	b.Channels <- config.NewChannel(channel, b.Account, "")
 	flog.Debugf("Added channel %s", channel)
 	return nil
 }
 
 func (b *Bxmpp) Send(msg config.Message) error {
 	flog.Debugf("Receiving %#v", msg)
-	if strings.ContainsRune(msg.Channel, '@') {
-		flog.Debugf("Sending private chat message to: %s %s", msg.Channel, msg.Text)
-		b.xc.Send(xmpp.Chat{
-			Type:   "chat",
+	if strings.Contains(msg.Channel, "@"+b.Config.Muc) {
+		flog.Debugf("Sending groupchat to: %s %s", msg.Channel, msg.Text)
+		_, err := b.xc.Send(xmpp.Chat{
+			Type:   "groupchat",
 			Remote: msg.Channel,
 			Text:   msg.Username + msg.Text,
 		})
-		return nil
+		return err
 	}
-	flog.Debugf("Sending groupchat to: %s %s", msg.Channel+"@"+b.Config.Muc, msg.Text)
-	b.xc.Send(xmpp.Chat{
-		Type:   "groupchat",
-		Remote: msg.Channel + "@" + b.Config.Muc,
+
+	flog.Debugf("Sending private chat message to: %s %s", msg.Channel, msg.Text)
+	_, err := b.xc.Send(xmpp.Chat{
+		Type:   "chat",
+		Remote: msg.Channel,
 		Text:   msg.Username + msg.Text,
 	})
-	return nil
+	return err
 }
 
 func (b *Bxmpp) createXMPP() (*xmpp.Client, error) {
@@ -157,7 +164,11 @@ func (b *Bxmpp) getUsername(v xmpp.Chat) string {
 	if v.Type == "chat" {
 		return node + "@" + domain
 	}
-	return b.KnownUsers[resource]
+	knownUserName := b.KnownUsers[resource]
+	if knownUserName == "" {
+		return resource
+	}
+	return knownUserName
 }
 
 func (b *Bxmpp) getUsernameFromJid(jid string) string {
@@ -170,10 +181,7 @@ func (b *Bxmpp) getUsernameFromJid(jid string) string {
 
 func (b *Bxmpp) getChannel(v xmpp.Chat) string {
 	node, domain, _ := b.parseJid(v.Remote)
-	if v.Type == "chat" {
-		return node + "@" + domain
-	}
-	return node
+	return node + "@" + domain
 }
 
 func (b *Bxmpp) handleXMPP() error {
@@ -206,6 +214,14 @@ func (b *Bxmpp) handleXMPP() error {
 						IsPriv:   isPriv,
 					}
 				}
+			} else {
+				for _, innerMsg := range v.OtherElem {
+					invite := Invite{}
+					err := xml.Unmarshal([]byte(innerMsg.InnerXML), &invite)
+					if err == nil {
+						b.xc.JoinMUCNoHistory(v.Remote, b.Config.Nick)
+					}
+				}
 			}
 		case xmpp.IQ:
 			for _, i := range v.ClientQuery.Item {
@@ -213,8 +229,8 @@ func (b *Bxmpp) handleXMPP() error {
 				b.Users <- config.NewUser(i.Jid, b.Account, i.Name)
 			}
 			flog.Info(string(v.Query))
-			for _, i := range v.DiscoQuery.Item {
-				b.Channels <- config.NewChannel(i.Name, b.Account)
+			for _, channel := range v.DiscoQuery.Item {
+				b.Channels <- config.NewChannel(channel.Jid, b.Account, channel.Name)
 			}
 		case xmpp.Presence:
 			if v.MucJid == "" {

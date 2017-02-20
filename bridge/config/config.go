@@ -39,6 +39,7 @@ type User struct {
 type Channel struct {
 	ID      string
 	Channel string
+	Name    string
 	Account string
 	Origin  string
 }
@@ -153,10 +154,11 @@ func NewUser(id, account, name string) User {
 	}
 }
 
-func NewChannel(id, account string) Channel {
+func NewChannel(id, account, name string) Channel {
 	return Channel{
 		ID:      fmt.Sprintf("%s:%s", id, account),
 		Channel: id,
+		Name:    name,
 		Account: account,
 	}
 }
