@@ -109,6 +109,13 @@
 	  updateState(Object.assign({}, state, {
 	    activeChannel: channel
 	  }));
+	  sendCommand("replay_messages", channel.ID);
+	}
+
+	function sendCommand(Command, Param) {
+	  ws.send(JSON.stringify({
+	    Command: { Command: Command, Param: Param }
+	  }));
 	}
 
 	function sendMessage(_ref, text) {
@@ -117,9 +124,11 @@
 	      User = _ref.User;
 
 	  ws.send(JSON.stringify({
-	    Channel: Channel || User,
-	    To: Account,
-	    Text: text
+	    Message: {
+	      Channel: Channel || User,
+	      To: Account,
+	      Text: text
+	    }
 	  }));
 	}
 

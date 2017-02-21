@@ -32,7 +32,7 @@ func New(cfg *config.Config, gateway *config.WebGateway) error {
 	c.Users = make(chan config.User, 10)
 	c.Channels = make(chan config.Channel, 10)
 	c.MessageLog = make(chan config.Message, 10)
-	c.Commands = make(chan string, 10)
+	c.Commands = make(chan config.Command, 10)
 	gw := &WebGateway{}
 	gw.Bridges = make(map[string]*bridge.Bridge)
 	gw.Config = cfg
@@ -105,7 +105,7 @@ func (gw *WebGateway) handleChannel(channel config.Channel) {
 	gw.WebBridge.Discovery(channel)
 }
 
-func (gw *WebGateway) handleCommand(cmd string) {
+func (gw *WebGateway) handleCommand(cmd config.Command) {
 	gw.DiskBridge.HandleCommand(cmd)
 }
 

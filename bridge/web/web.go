@@ -17,7 +17,7 @@ type Bweb struct {
 	Channels    chan config.Channel
 	Remote      chan config.Message
 	Hub         *Hub
-	Commands    chan string
+	Commands    chan config.Command
 	count       int
 }
 
@@ -26,6 +26,11 @@ type WireMessage struct {
 	Message config.Message
 	User    config.User
 	Channel config.Channel
+}
+
+type InboundWireMessage struct {
+	Message config.Message
+	Command config.Command
 }
 
 const (
@@ -106,11 +111,12 @@ func (b *Bweb) serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := &Client{
-		hub:     hub,
-		conn:    conn,
-		account: b.Account,
-		remote:  b.Remote,
-		send:    make(chan []byte, 256),
+		hub:            hub,
+		conn:           conn,
+		account:        b.Account,
+		remoteMessages: b.Remote,
+		remoteCommands: b.Commands,
+		send:           make(chan []byte, 256),
 	}
 	client.hub.register <- client
 	go client.writePump()
@@ -157,7 +163,7 @@ func (b *Bweb) Listen() error {
 	go b.Run()
 	http.Handle("/", http.FileServer(http.Dir("web/dist")))
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		b.Commands <- "connected"
+		b.Commands <- config.Command{Command: "connected"}
 		b.serveWs(b.Hub, w, r)
 	})
 	err := http.ListenAndServe("127.0.0.1:8001", nil)
@@ -173,17 +179,13 @@ type Client struct {
 
 	account string
 
-	remote chan config.Message
+	remoteMessages chan config.Message
+	remoteCommands chan config.Command
 
 	// Buffered channel of outbound messages.
 	send chan []byte
 }
 
-// readPump pumps messages from the websocket connection to the hub.
-//
-// The application runs readPump in a per-connection goroutine. The application
-// ensures that there is at most one reader on a connection by executing all
-// reads from this goroutine.
 func (c *Client) readPump() {
 	defer func() {
 		c.hub.unregister <- c
@@ -191,7 +193,10 @@ func (c *Client) readPump() {
 	}()
 	c.conn.SetReadLimit(maxMessageSize)
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
-	c.conn.SetPongHandler(func(string) error { c.conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+	c.conn.SetPongHandler(func(string) error {
+		c.conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
 	for {
 		_, jsonMsg, err := c.conn.ReadMessage()
 		if err != nil {
@@ -201,15 +206,22 @@ func (c *Client) readPump() {
 			break
 		}
 
-		msg := &config.Message{}
-		err = json.Unmarshal(jsonMsg, msg)
+		inbound := InboundWireMessage{}
+		err = json.Unmarshal(jsonMsg, &inbound)
 		if err != nil {
 			log.Printf("unable to parse json: %s", jsonMsg)
 			continue
 		}
-		msg.Account = c.account
-		msg.Username = "" // Empty for now
-		c.remote <- *msg
+		log.Printf("got request: %#v", inbound)
+		if inbound.Message.Text != "" {
+			msg := inbound.Message
+			msg.Account = c.account
+			msg.Username = "" // Empty for now
+			c.remoteMessages <- msg
+		}
+		if inbound.Command.Command != "" {
+			c.remoteCommands <- inbound.Command
+		}
 	}
 }
 

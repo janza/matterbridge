@@ -25,9 +25,9 @@ func TestStoreKeyValue(t *testing.T) {
 		t.Errorf("%s File should exist", testFile)
 	}
 
-	if string(writtenData) != "{\"key\":{\"Foo\":\"bar\"}}" {
-		t.Errorf("File should contain correct data: %s", writtenData)
-	}
+	assert.Equal(t,
+		"{\"key\":{\"Foo\":\"bar\"}}",
+		string(writtenData))
 }
 
 func TestStoreKeyValueUpdate(t *testing.T) {
@@ -51,9 +51,9 @@ func TestStoreKeyValueUpdate(t *testing.T) {
 		t.Errorf("%s File should exist", testFile)
 	}
 
-	if string(writtenData) != "{\"key\":{\"Foo\":\"bar2\"},\"key2\":{\"Foo\":\"bar3\"}}" {
-		t.Errorf("File should contain correct data: %s", writtenData)
-	}
+	assert.Equal(t,
+		"{\"key\":{\"Foo\":\"bar2\"},\"key2\":{\"Foo\":\"bar3\"}}",
+		string(writtenData))
 }
 
 func TestReadKeyValue(t *testing.T) {

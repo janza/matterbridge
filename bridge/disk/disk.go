@@ -160,7 +160,8 @@ func (b *Bdisk) TailLog(filename string, n int, offset int) list.List {
 }
 
 func (b *Bdisk) Send(msg config.Message) error {
-	return b.AppendToFile("messages.json", msg)
+	channelID := config.NewChannel(msg.Channel, msg.Account, "").ID
+	return b.AppendToFile(channelID+"_log.json", msg)
 }
 
 func (b *Bdisk) Presence(user config.User) error {
@@ -171,8 +172,8 @@ func (b *Bdisk) Discovery(channel config.Channel) error {
 	return b.StoreKeyValue("channels.json", channel.ID, channel)
 }
 
-func (b *Bdisk) ReplayMessages(numberOfMessages, offset int) {
-	l := b.TailLog("messages.json", numberOfMessages, offset)
+func (b *Bdisk) ReplayMessages(channel string, numberOfMessages, offset int) {
+	l := b.TailLog(channel+"_log.json", numberOfMessages, offset)
 
 	for e := l.Front(); e != nil; e = e.Next() {
 		msg, ok := e.Value.(config.Message)
@@ -184,14 +185,13 @@ func (b *Bdisk) ReplayMessages(numberOfMessages, offset int) {
 	}
 }
 
-func (b *Bdisk) HandleCommand(cmd string) error {
-	switch cmd {
+func (b *Bdisk) HandleCommand(cmd config.Command) error {
+	switch cmd.Command {
 	case "connected":
-		go b.ReplayMessages(100, 0)
 		go b.ReplayUsers()
 		go b.ReplayChannels()
 	case "replay_messages":
-		go b.ReplayMessages(100, 0)
+		go b.ReplayMessages(cmd.Param, 100, 0)
 	case "get_users":
 		go b.ReplayUsers()
 	case "get_channels":

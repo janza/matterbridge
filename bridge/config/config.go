@@ -46,6 +46,7 @@ type Channel struct {
 
 type Command struct {
 	Command string
+	Param   string
 	Origin  string
 }
 
@@ -54,7 +55,7 @@ type Comms struct {
 	MessageLog chan Message
 	Users      chan User
 	Channels   chan Channel
-	Commands   chan string
+	Commands   chan Command
 }
 
 type Protocol struct {
