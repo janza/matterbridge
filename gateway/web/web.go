@@ -6,7 +6,7 @@ import (
 	"github.com/42wim/matterbridge/bridge/disk"
 	"github.com/42wim/matterbridge/bridge/web"
 	log "github.com/Sirupsen/logrus"
-	// "strings"
+	"time"
 )
 
 var (
@@ -23,7 +23,6 @@ type WebGateway struct {
 	Bridges    map[string]*bridge.Bridge
 	WebBridge  *bweb.Bweb
 	DiskBridge *bdisk.Bdisk
-	// Channels map[string]*bridge.Bridge
 }
 
 func New(cfg *config.Config, gateway *config.WebGateway) error {
@@ -74,6 +73,7 @@ func (gw *WebGateway) handleReceive(c config.Comms) {
 		select {
 		case msg := <-c.Messages:
 			flog.Debugf("Got message %#v", msg)
+			msg.Timestamp = time.Now()
 			gw.handleMessage(msg)
 		case user := <-c.Users:
 			flog.Debugf("Got user presence %#v", user)

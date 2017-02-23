@@ -36,7 +36,9 @@ ws.addEventListener('message', function (msg, flags) {
     updateState(Object.assign({}, state, {
       messages: state.messages.concat([
         data.Message
-      ]),
+      ]).sort(
+        (a, b) => a.Timestamp < b.Timestamp ? -1 : (a.Timestamp == b.Timestamp ? 0 : 1)
+      ),
     }))
   } else if (data.Type === 'user')  {
     updateState(Object.assign({}, state, {
