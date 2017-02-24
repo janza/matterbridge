@@ -1,26 +1,27 @@
 import { h, render, Component } from 'preact'
 import {
+  Button,
+  Comment,
   Dropdown,
+  Form,
   Grid,
+  Header,
   Icon,
   Input,
   Menu,
-  Button,
-  Comment,
-  Form,
-  Header
+  Segment,
+  Sidebar,
 } from 'semantic-ui-react'
 
 import {HotKeys} from 'react-hotkeys'
 
 var ws = new WebSocket('ws://localhost:8001/ws')
-const activeChannel = {}
 
 var state = {
   messages: [],
-  activeChannel: '',
-  channels: [],
-  users: [],
+  activeChannel: {},
+  channels: {},
+  users: {},
 }
 
 const newChannel = (channels, account, channel) => {
@@ -41,17 +42,35 @@ ws.addEventListener('message', function (msg, flags) {
       ),
     }))
   } else if (data.Type === 'user')  {
-    updateState(Object.assign({}, state, {
-      users: Array.from(new Set(state.users.concat([
-        data.User
-      ]))),
-    }))
+    updateState(
+      Object.assign(
+        {},
+        state,
+        {
+          users: Object.assign(
+            {},
+            state.users, {
+              [data.User.ID]: data.User
+            }
+          )
+        }
+      )
+    )
   } else if (data.Type === 'channel')  {
-    updateState(Object.assign({}, state, {
-      channels: Array.from(new Set(state.channels.concat([
-        data.Channel
-      ]))),
-    }))
+    updateState(
+      Object.assign(
+        {},
+        state,
+        {
+          channels: Object.assign(
+          {},
+          state.channels, {
+            [data.Channel.ID]: data.Channel
+          }
+          )
+        }
+      )
+    )
   }
 })
 
@@ -59,12 +78,17 @@ ws.addEventListener('close', function () {
   ws = new WebSocket('ws://localhost:8001/ws')
 });
 
+var stateThrottle;
+
 function updateState (newState) {
   window.state = state = newState
-  redraw(state)
+  clearTimeout(stateThrottle);
+  stateThrottle = setTimeout(() => redraw(state), 100);
+  // redraw(state)
 }
 
 function setActiveChannel (channel) {
+  if (channel.ID === state.activeChannel.ID) return
   updateState(Object.assign({}, state, {
     activeChannel: channel
   }))
@@ -87,7 +111,7 @@ function sendMessage ({Account, Channel, User}, text) {
   }))
 }
 
-const Feed = ({messages, activeChannel}) => {
+const Feed = ({messages, activeChannel, users}) => {
   var previousUsername;
   return <Comment.Group minimal>
     { messages.filter(
@@ -100,23 +124,25 @@ const Feed = ({messages, activeChannel}) => {
           || m.To === activeChannel.Account
         )
       }
-    ).map((message) => {
-      const differentUser = message.Username !== previousUsername
-      previousUsername = message.Username
+    ).map((m) => {
+      const differentUser = m.Username !== previousUsername
+      previousUsername = m.Username
+      const user = users[`${m.Username}:${m.Account}`]
+      const userName = user && user.Name || m.Username
       return <Comment>
         {
           differentUser
-            ? <Comment.Avatar as='a' src={'https://robohash.org/' + message.Username} />
+            ? <Comment.Avatar as='a' src={'https://robohash.org/' + m.Username} />
             : <Comment.Avatar />
         }
         <Comment.Content>
-          { differentUser ? <Comment.Author as='a'>{message.Username}</Comment.Author> : null }
+          { differentUser ? <Comment.Author as='a'>{ userName }</Comment.Author> : null }
           { differentUser
               ?<Comment.Metadata>
-                <span>Today at 5:42PM</span>
+                <span>{ m.Timestamp }</span>
               </Comment.Metadata>
               : null }
-          <Comment.Text>{message.Text}</Comment.Text>
+          <Comment.Text>{ m.Text }</Comment.Text>
         </Comment.Content>
       </Comment>
     }) }
@@ -145,8 +171,8 @@ class Channels extends Component {
     setActiveChannel(newActiveChannel)
   }
 
-  render({channels, activeChannel}) {
-    return <Menu vertical fluid >
+  render({channels, activeChannel, visible}) {
+    return <Sidebar as={Menu} animation='push' visible={visible} icon='labeled' vertical inverted>
       <Menu.Item>
         <Input placeholder='Search...' >
           <input
@@ -158,14 +184,20 @@ class Channels extends Component {
       </Menu.Item>
       {
         channels.filter(c => {
-          return !this.state.filter || c.ID.indexOf(this.state.filter) >= 0
+          return c.ID && (!this.state.filter || c.ID.indexOf(this.state.filter) >= 0)
         }).map(c => (
           <Menu.Item onClick={() => setActiveChannel(c)} active={c == activeChannel} >
+            <span style={{
+              maxWidth: '140px',
+              overflow: 'hidden',
+              display: 'inline-block'
+            }}>
             {c.Name || c.ID}
+            </span>
           </Menu.Item>
         ))
       }
-    </Menu>
+    </Sidebar>
   }
 }
 
@@ -189,31 +221,29 @@ class App extends Component {
 
     return <HotKeys
       keyMap={keyMap}
+      style={{height: '100%'}}
       handlers={{
         'focusChannelSearch': () => this.channels.focusChannelSearch()
       }}>
-      <div>
-        <Grid padded columns={2} >
-          <Grid.Row>
-            <Grid.Column width={3}>
-              <Channels
-                ref={(el) => this.channels = el}
-                channels={state.channels.concat(state.users)}
-                activeChannel={state.activeChannel} />
-            </Grid.Column>
-            <Grid.Column width={13}>
-              <Feed messages={state.messages} activeChannel={state.activeChannel} />
-              <MessageInput activeChannel={state.activeChannel} />
-            </Grid.Column>
-          </Grid.Row>
-        </Grid>
-      </div>
+      <Sidebar.Pushable as={Segment}>
+        <Channels
+          ref={(el) => this.channels = el}
+          visible
+          channels={Object.values(state.channels).concat(Object.values(state.users))}
+          activeChannel={state.activeChannel} />
+        <Sidebar.Pusher style={{ maxHeight: '100%', overflowY: 'scroll'}}>
+          <Header as='h2' content={state.activeChannel.Name} />
+          <Feed messages={state.messages} users={state.users} activeChannel={state.activeChannel} />
+          <MessageInput activeChannel={state.activeChannel} />
+        </Sidebar.Pusher>
+      </Sidebar.Pushable>
     </HotKeys>
   }
 }
 
 function redraw ({messages}) {
   const chat = document.querySelector('#chat')
+  chat.style.height = '100%';
   render((<App state={state}/>), chat, chat.lastChild)
 }
 

@@ -60,14 +60,15 @@
 
 	function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
 
+	function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
+
 	var ws = new WebSocket('ws://localhost:8001/ws');
-	var activeChannel = {};
 
 	var state = {
 	  messages: [],
-	  activeChannel: '',
-	  channels: [],
-	  users: []
+	  activeChannel: {},
+	  channels: {},
+	  users: {}
 	};
 
 	var newChannel = function newChannel(channels, account, channel) {
@@ -83,15 +84,17 @@
 
 	  if (data.Type === 'message') {
 	    updateState(Object.assign({}, state, {
-	      messages: state.messages.concat([data.Message])
+	      messages: state.messages.concat([data.Message]).sort(function (a, b) {
+	        return a.Timestamp < b.Timestamp ? -1 : a.Timestamp == b.Timestamp ? 0 : 1;
+	      })
 	    }));
 	  } else if (data.Type === 'user') {
 	    updateState(Object.assign({}, state, {
-	      users: Array.from(new Set(state.users.concat([data.User])))
+	      users: Object.assign({}, state.users, _defineProperty({}, data.User.ID, data.User))
 	    }));
 	  } else if (data.Type === 'channel') {
 	    updateState(Object.assign({}, state, {
-	      channels: Array.from(new Set(state.channels.concat([data.Channel])))
+	      channels: Object.assign({}, state.channels, _defineProperty({}, data.Channel.ID, data.Channel))
 	    }));
 	  }
 	});
@@ -100,12 +103,19 @@
 	  ws = new WebSocket('ws://localhost:8001/ws');
 	});
 
+	var stateThrottle;
+
 	function updateState(newState) {
 	  window.state = state = newState;
-	  redraw(state);
+	  clearTimeout(stateThrottle);
+	  stateThrottle = setTimeout(function () {
+	    return redraw(state);
+	  }, 100);
+	  // redraw(state)
 	}
 
 	function setActiveChannel(channel) {
+	  if (channel.ID === state.activeChannel.ID) return;
 	  updateState(Object.assign({}, state, {
 	    activeChannel: channel
 	  }));
@@ -134,7 +144,8 @@
 
 	var Feed = function Feed(_ref2) {
 	  var messages = _ref2.messages,
-	      activeChannel = _ref2.activeChannel;
+	      activeChannel = _ref2.activeChannel,
+	      users = _ref2.users;
 
 	  var previousUsername;
 	  return (0, _preact.h)(
@@ -142,20 +153,22 @@
 	    { minimal: true },
 	    messages.filter(function (m) {
 	      return (m.Channel === activeChannel.Channel || m.Channel === activeChannel.User) && (m.Account === activeChannel.Account || m.To === activeChannel.Account);
-	    }).map(function (message) {
-	      var differentUser = message.Username !== previousUsername;
-	      previousUsername = message.Username;
+	    }).map(function (m) {
+	      var differentUser = m.Username !== previousUsername;
+	      previousUsername = m.Username;
+	      var user = users[m.Username + ':' + m.Account];
+	      var userName = user && user.Name || m.Username;
 	      return (0, _preact.h)(
 	        _semanticUiReact.Comment,
 	        null,
-	        differentUser ? (0, _preact.h)(_semanticUiReact.Comment.Avatar, { as: 'a', src: 'https://robohash.org/' + message.Username }) : (0, _preact.h)(_semanticUiReact.Comment.Avatar, null),
+	        differentUser ? (0, _preact.h)(_semanticUiReact.Comment.Avatar, { as: 'a', src: 'https://robohash.org/' + m.Username }) : (0, _preact.h)(_semanticUiReact.Comment.Avatar, null),
 	        (0, _preact.h)(
 	          _semanticUiReact.Comment.Content,
 	          null,
 	          differentUser ? (0, _preact.h)(
 	            _semanticUiReact.Comment.Author,
 	            { as: 'a' },
-	            message.Username
+	            userName
 	          ) : null,
 	          differentUser ? (0, _preact.h)(
 	            _semanticUiReact.Comment.Metadata,
@@ -163,13 +176,13 @@
 	            (0, _preact.h)(
 	              'span',
 	              null,
-	              'Today at 5:42PM'
+	              m.Timestamp
 	            )
 	          ) : null,
 	          (0, _preact.h)(
 	            _semanticUiReact.Comment.Text,
 	            null,
-	            message.Text
+	            m.Text
 	          )
 	        )
 	      );
@@ -214,11 +227,12 @@
 	      var _this3 = this;
 
 	      var channels = _ref3.channels,
-	          activeChannel = _ref3.activeChannel;
+	          activeChannel = _ref3.activeChannel,
+	          visible = _ref3.visible;
 
 	      return (0, _preact.h)(
-	        _semanticUiReact.Menu,
-	        { vertical: true, fluid: true },
+	        _semanticUiReact.Sidebar,
+	        { as: _semanticUiReact.Menu, animation: 'push', visible: visible, icon: 'labeled', vertical: true, inverted: true },
 	        (0, _preact.h)(
 	          _semanticUiReact.Menu.Item,
 	          null,
@@ -237,14 +251,22 @@
 	          )
 	        ),
 	        channels.filter(function (c) {
-	          return !_this3.state.filter || c.ID.indexOf(_this3.state.filter) >= 0;
+	          return c.ID && (!_this3.state.filter || c.ID.indexOf(_this3.state.filter) >= 0);
 	        }).map(function (c) {
 	          return (0, _preact.h)(
 	            _semanticUiReact.Menu.Item,
 	            { onClick: function onClick() {
 	                return setActiveChannel(c);
 	              }, active: c == activeChannel },
-	            c.Name || c.ID
+	            (0, _preact.h)(
+	              'span',
+	              { style: {
+	                  maxWidth: '140px',
+	                  overflow: 'hidden',
+	                  display: 'inline-block'
+	                } },
+	              c.Name || c.ID
+	            )
 	          );
 	        })
 	      );
@@ -293,37 +315,28 @@
 	        _reactHotkeys.HotKeys,
 	        {
 	          keyMap: keyMap,
+	          style: { height: '100%' },
 	          handlers: {
 	            'focusChannelSearch': function focusChannelSearch() {
 	              return _this5.channels.focusChannelSearch();
 	            }
 	          } },
 	        (0, _preact.h)(
-	          'div',
-	          null,
+	          _semanticUiReact.Sidebar.Pushable,
+	          { as: _semanticUiReact.Segment },
+	          (0, _preact.h)(Channels, {
+	            ref: function ref(el) {
+	              return _this5.channels = el;
+	            },
+	            visible: true,
+	            channels: Object.values(state.channels).concat(Object.values(state.users)),
+	            activeChannel: state.activeChannel }),
 	          (0, _preact.h)(
-	            _semanticUiReact.Grid,
-	            { padded: true, columns: 2 },
-	            (0, _preact.h)(
-	              _semanticUiReact.Grid.Row,
-	              null,
-	              (0, _preact.h)(
-	                _semanticUiReact.Grid.Column,
-	                { width: 3 },
-	                (0, _preact.h)(Channels, {
-	                  ref: function ref(el) {
-	                    return _this5.channels = el;
-	                  },
-	                  channels: state.channels.concat(state.users),
-	                  activeChannel: state.activeChannel })
-	              ),
-	              (0, _preact.h)(
-	                _semanticUiReact.Grid.Column,
-	                { width: 13 },
-	                (0, _preact.h)(Feed, { messages: state.messages, activeChannel: state.activeChannel }),
-	                (0, _preact.h)(MessageInput, { activeChannel: state.activeChannel })
-	              )
-	            )
+	            _semanticUiReact.Sidebar.Pusher,
+	            { style: { maxHeight: '100%', overflowY: 'scroll' } },
+	            (0, _preact.h)(_semanticUiReact.Header, { as: 'h2', content: state.activeChannel.Name }),
+	            (0, _preact.h)(Feed, { messages: state.messages, users: state.users, activeChannel: state.activeChannel }),
+	            (0, _preact.h)(MessageInput, { activeChannel: state.activeChannel })
 	          )
 	        )
 	      );
@@ -337,6 +350,7 @@
 	  var messages = _ref6.messages;
 
 	  var chat = document.querySelector('#chat');
+	  chat.style.height = '100%';
 	  (0, _preact.render)((0, _preact.h)(App, { state: state }), chat, chat.lastChild);
 	}
 
