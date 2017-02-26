@@ -228,7 +228,6 @@ func (b *Bxmpp) handleXMPP() error {
 				b.KnownUsers[i.Name] = i.Jid
 				b.Users <- config.NewUser(i.Jid, b.Account, i.Name)
 			}
-			flog.Info(string(v.Query))
 			for _, channel := range v.DiscoQuery.Item {
 				b.Channels <- config.NewChannel(channel.Jid, b.Account, channel.Name)
 			}

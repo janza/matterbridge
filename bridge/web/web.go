@@ -2,11 +2,12 @@ package bweb
 
 import (
 	"encoding/json"
-	"github.com/42wim/matterbridge/bridge/config"
 	log "github.com/Sirupsen/logrus"
-	"github.com/gorilla/websocket"
 	"net/http"
 	"time"
+
+	"github.com/42wim/matterbridge/bridge/config"
+	"github.com/gorilla/websocket"
 )
 
 type Bweb struct {
