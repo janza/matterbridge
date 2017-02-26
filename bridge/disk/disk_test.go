@@ -142,13 +142,13 @@ func TestTailLogWithOffset(t *testing.T) {
 
 	secondBatchTime := time.Date(2000, 1, 2, 0, 0, 0, 0, time.Local)
 	for i := 0; i < 10; i++ {
-		b.AppendToFile(testFile, config.Message{})
+		b.AppendToFile(testFile, config.Message{Text: "second", Timestamp: secondBatchTime})
 	}
 
-	l := b.TailLog(testFile, 10, time.Time{Timestamp: secondBatchTime})
+	l := b.TailLog(testFile, 10, secondBatchTime)
 
 	for e := l.Front(); e != nil; e = e.Next() {
-		assert.Equal(t, config.Message{Text: "hi"}, e.Value, "element in the list matches expected")
+		assert.Equal(t, config.Message{Text: "hi", Timestamp: firstBatchTime}, e.Value, "element in the list matches expected")
 	}
 
 	assert.Equal(t, 10, l.Len(), "there should be 10 elements in list")
@@ -172,7 +172,7 @@ func TestTailLogOutOfBound(t *testing.T) {
 	l := b.TailLog(testFile, 30, secondBatchTime)
 
 	for e := l.Front(); e != nil; e = e.Next() {
-		assert.Equal(t, config.Message{Text: "hi"}, e.Value, "element in the list matches expected")
+		assert.Equal(t, config.Message{Text: "hi", Timestamp: firstBatchTime}, e.Value, "element in the list matches expected")
 	}
 
 	assert.Equal(t, 10, l.Len(), "there should be 10 elements in list")
