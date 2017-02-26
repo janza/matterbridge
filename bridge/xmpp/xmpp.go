@@ -203,15 +203,15 @@ func (b *Bxmpp) handleXMPP() error {
 				nick := b.getUsername(v)
 				channel := b.getChannel(v)
 				isPriv := v.Type == "chat"
-				flog.Warnf("CHAT: [%s] %s", nick, b.Account)
 
 				if nick != b.Config.Nick && v.Text != "" {
 					b.Remote <- config.Message{
-						Username: nick,
-						Text:     v.Text,
-						Channel:  channel,
-						Account:  b.Account,
-						IsPriv:   isPriv,
+						Username:  nick,
+						Text:      v.Text,
+						Timestamp: v.Stamp,
+						Channel:   channel,
+						Account:   b.Account,
+						IsPriv:    isPriv,
 					}
 				}
 			} else {

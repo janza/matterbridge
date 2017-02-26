@@ -29,8 +29,8 @@ type WireMessage struct {
 }
 
 type InboundWireMessage struct {
-	Message config.Message
-	Command config.Command
+	Type    string
+	Message interface{}
 }
 
 const (
@@ -163,7 +163,6 @@ func (b *Bweb) Listen() error {
 	go b.Run()
 	http.Handle("/", http.FileServer(http.Dir("web/dist")))
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		b.Commands <- config.Command{Command: "connected"}
 		b.serveWs(b.Hub, w, r)
 	})
 	err := http.ListenAndServe("127.0.0.1:8001", nil)
@@ -205,31 +204,63 @@ func (c *Client) readPump() {
 			}
 			break
 		}
-
-		inbound := InboundWireMessage{}
+		var msg json.RawMessage
+		inbound := InboundWireMessage{Message: &msg}
 		err = json.Unmarshal(jsonMsg, &inbound)
 		if err != nil {
 			log.Printf("unable to parse json: %s", jsonMsg)
 			continue
 		}
-		log.Printf("got request: %#v", inbound)
-		if inbound.Message.Text != "" {
-			msg := inbound.Message
-			msg.Account = c.account
-			msg.Username = "" // Empty for now
-			c.remoteMessages <- msg
-		}
-		if inbound.Command.Command != "" {
-			c.remoteCommands <- inbound.Command
+		switch inbound.Type {
+		case "message":
+			var incomingMessage config.Message
+			if err := json.Unmarshal(msg, &incomingMessage); err != nil {
+				log.Fatal(err)
+				continue
+			}
+			incomingMessage.Account = c.account
+			incomingMessage.Username = "" // Empty for now
+			c.remoteMessages <- incomingMessage
+		case "command":
+			var specificCommand json.RawMessage
+			cmd := config.Command{
+				Command: &specificCommand,
+			}
+			if err := json.Unmarshal(msg, &cmd); err != nil {
+				log.Fatal(err)
+				continue
+			}
+			switch cmd.Type {
+			case "replay_messages":
+				var command config.GetMessagesCommand
+				err := json.Unmarshal(specificCommand, &command)
+				if err != nil {
+					log.Fatal(err)
+					continue
+				}
+				cmd.Command = command
+			case "get_channels":
+				var command config.GetChannelsCommand
+				err := json.Unmarshal(specificCommand, &command)
+				if err != nil {
+					log.Fatal(err)
+					continue
+				}
+				cmd.Command = command
+			case "get_users":
+				var command config.GetUsersCommand
+				err := json.Unmarshal(specificCommand, &command)
+				if err != nil {
+					log.Fatal(err)
+					continue
+				}
+				cmd.Command = command
+			}
+			c.remoteCommands <- cmd
 		}
 	}
 }
 
-// writePump pumps messages from the hub to the websocket connection.
-//
-// A goroutine running writePump is started for each connection. The
-// application ensures that there is at most one writer to a connection by
-// executing all writes from this goroutine.
 func (c *Client) writePump() {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {

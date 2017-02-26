@@ -16,6 +16,7 @@ const (
 )
 
 type Message struct {
+	ID        string
 	Text      string
 	Channel   string
 	Username  string
@@ -45,9 +46,20 @@ type Channel struct {
 }
 
 type Command struct {
-	Command string
-	Param   string
+	Type    string
+	Command interface{}
 	Origin  string
+}
+
+type GetChannelsCommand struct {
+}
+
+type GetUsersCommand struct {
+}
+
+type GetMessagesCommand struct {
+	Channel string
+	Offset  time.Time
 }
 
 type Comms struct {

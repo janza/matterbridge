@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"testing"
+	"time"
 )
 
 type TestStruct struct {
@@ -120,7 +121,7 @@ func TestTailLog(t *testing.T) {
 		b.AppendToFile(testFile, config.Message{})
 	}
 
-	l := b.TailLog(testFile, 10, 0)
+	l := b.TailLog(testFile, 10, time.Time{})
 
 	for e := l.Front(); e != nil; e = e.Next() {
 		assert.Equal(t, config.Message{}, e.Value, "element in the list matches expected")
@@ -133,15 +134,18 @@ func TestTailLogWithOffset(t *testing.T) {
 	testFile := "test.json"
 	os.Remove(testFile)
 	b := &Bdisk{}
+
+	firstBatchTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.Local)
 	for i := 0; i < 10; i++ {
-		b.AppendToFile(testFile, config.Message{Text: "hi"})
+		b.AppendToFile(testFile, config.Message{Text: "hi", Timestamp: firstBatchTime})
 	}
 
+	secondBatchTime := time.Date(2000, 1, 2, 0, 0, 0, 0, time.Local)
 	for i := 0; i < 10; i++ {
 		b.AppendToFile(testFile, config.Message{})
 	}
 
-	l := b.TailLog(testFile, 10, 10)
+	l := b.TailLog(testFile, 10, time.Time{Timestamp: secondBatchTime})
 
 	for e := l.Front(); e != nil; e = e.Next() {
 		assert.Equal(t, config.Message{Text: "hi"}, e.Value, "element in the list matches expected")
@@ -154,15 +158,18 @@ func TestTailLogOutOfBound(t *testing.T) {
 	testFile := "test.json"
 	os.Remove(testFile)
 	b := &Bdisk{}
+
+	firstBatchTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.Local)
 	for i := 0; i < 10; i++ {
-		b.AppendToFile(testFile, config.Message{Text: "hi"})
+		b.AppendToFile(testFile, config.Message{Text: "hi", Timestamp: firstBatchTime})
 	}
 
+	secondBatchTime := time.Date(2000, 1, 2, 0, 0, 0, 0, time.Local)
 	for i := 0; i < 10; i++ {
-		b.AppendToFile(testFile, config.Message{})
+		b.AppendToFile(testFile, config.Message{Timestamp: secondBatchTime})
 	}
 
-	l := b.TailLog(testFile, 30, 10)
+	l := b.TailLog(testFile, 30, secondBatchTime)
 
 	for e := l.Front(); e != nil; e = e.Next() {
 		assert.Equal(t, config.Message{Text: "hi"}, e.Value, "element in the list matches expected")

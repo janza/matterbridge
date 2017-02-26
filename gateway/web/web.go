@@ -73,7 +73,9 @@ func (gw *WebGateway) handleReceive(c config.Comms) {
 		select {
 		case msg := <-c.Messages:
 			flog.Debugf("Got message %#v", msg)
-			msg.Timestamp = time.Now()
+			if msg.Timestamp.IsZero() {
+				msg.Timestamp = time.Now()
+			}
 			gw.handleMessage(msg)
 		case user := <-c.Users:
 			flog.Debugf("Got user presence %#v", user)
@@ -106,7 +108,7 @@ func (gw *WebGateway) handleChannel(channel config.Channel) {
 }
 
 func (gw *WebGateway) handleCommand(cmd config.Command) {
-	gw.DiskBridge.HandleCommand(cmd)
+	gw.DiskBridge.HandleCommand(cmd.Command)
 }
 
 func (gw *WebGateway) handleLog(msg config.Message) {

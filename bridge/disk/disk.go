@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"time"
 )
 
 type Bdisk struct {
@@ -126,7 +127,7 @@ func lineCounter(r io.Reader) (int, error) {
 	}
 }
 
-func (b *Bdisk) TailLog(filename string, n int, offset int) list.List {
+func (b *Bdisk) TailLog(filename string, n int, offset time.Time) list.List {
 	l := list.New()
 	f, err := os.Open(filename)
 	if err != nil {
@@ -134,14 +135,11 @@ func (b *Bdisk) TailLog(filename string, n int, offset int) list.List {
 		return *l
 	}
 
-	numberOrMessagesInLog, err := lineCounter(f)
-	check(err)
-
-	flog.Printf("numberOrMessagesInLog %d", numberOrMessagesInLog)
+	offsetIsZero := offset.IsZero()
 
 	d := json.NewDecoder(f)
 	f.Seek(0, 0)
-	for i := 0; i < numberOrMessagesInLog-offset; i++ {
+	for {
 		var msg config.Message
 		err := d.Decode(&msg)
 		if err == io.EOF {
@@ -150,6 +148,10 @@ func (b *Bdisk) TailLog(filename string, n int, offset int) list.List {
 			flog.Warnf("Failed to load message: %s", err)
 			break
 		}
+		if !offsetIsZero && (msg.Timestamp.After(offset) || msg.Timestamp.Equal(offset)) {
+			break
+		}
+
 		l.PushFront(msg)
 		if l.Len() > n {
 			l.Remove(l.Back())
@@ -172,7 +174,7 @@ func (b *Bdisk) Discovery(channel config.Channel) error {
 	return b.StoreKeyValue("channels.json", channel.ID, channel)
 }
 
-func (b *Bdisk) ReplayMessages(channel string, numberOfMessages, offset int) {
+func (b *Bdisk) ReplayMessages(channel string, numberOfMessages int, offset time.Time) {
 	l := b.TailLog(channel+"_log.json", numberOfMessages, offset)
 
 	for e := l.Front(); e != nil; e = e.Next() {
@@ -185,17 +187,16 @@ func (b *Bdisk) ReplayMessages(channel string, numberOfMessages, offset int) {
 	}
 }
 
-func (b *Bdisk) HandleCommand(cmd config.Command) error {
-	switch cmd.Command {
-	case "connected":
+func (b *Bdisk) HandleCommand(command interface{}) error {
+	switch cmd := command.(type) {
+	case config.GetMessagesCommand:
+		go b.ReplayMessages(cmd.Channel, 100, cmd.Offset)
+	case config.GetUsersCommand:
 		go b.ReplayUsers()
+	case config.GetChannelsCommand:
 		go b.ReplayChannels()
-	case "replay_messages":
-		go b.ReplayMessages(cmd.Param, 100, 0)
-	case "get_users":
-		go b.ReplayUsers()
-	case "get_channels":
-		go b.ReplayChannels()
+	default:
+		log.Warn("Unkown command received %#v", command)
 	}
 
 	return nil
