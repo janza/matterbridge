@@ -1648,10 +1648,6 @@ rc@~1.1.6:
     minimist "^1.2.0"
     strip-json-comments "~1.0.4"
 
-react-auto-scroll@^1.1.0:
-  version "1.1.0"
-  resolved "https://registry.yarnpkg.com/react-auto-scroll/-/react-auto-scroll-1.1.0.tgz#345a899ab938a39c646f606d23c9c6be39f1cdd9"
-
 "react-auto-scroll@https://github.com/uneart/react-auto-scroll/archive/master.tar.gz":
   version "1.1.0"
   resolved "https://github.com/uneart/react-auto-scroll/archive/master.tar.gz#49f3a76492b551913ab1b5dd109984cfd9d14249"
@@ -1809,9 +1805,9 @@ ripemd160@0.2.0:
   version "0.2.0"
   resolved "https://registry.yarnpkg.com/ripemd160/-/ripemd160-0.2.0.tgz#2bf198bde167cacfa51c0a928e84b68bbe171fce"
 
-sanitize-html@^1.14.1:
-  version "1.14.1"
-  resolved "https://registry.yarnpkg.com/sanitize-html/-/sanitize-html-1.14.1.tgz#730ffa2249bdf18333effe45b286173c9c5ad0b8"
+sanitize-html-react@^1.13.0:
+  version "1.13.0"
+  resolved "https://registry.yarnpkg.com/sanitize-html-react/-/sanitize-html-react-1.13.0.tgz#e757b9adbaf2c8a762f3d2dff70138838e05420a"
   dependencies:
     htmlparser2 "^3.9.0"
     regexp-quote "0.0.0"

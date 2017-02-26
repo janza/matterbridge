@@ -2,7 +2,7 @@ import { h, render, Component } from 'preact'  // eslint-disable-line
 import makeAccumulator from 'sorted-immutable-list'
 import humanDate from 'tiny-human-time'
 import Linkify from 'react-linkify'
-import sanitizeHtml from 'sanitize-html'
+import sanitizeHtml from 'sanitize-html-react'
 import Parse from 'react-html-parser'
 import AutoScroll from 'react-auto-scroll'
 import ColorAssigner from '@convergence/color-assigner'
@@ -11,9 +11,7 @@ import {
   Form,
   Header,
   Input,
-  Menu,
-  Segment,
-  Sidebar
+  Menu
 } from 'semantic-ui-react'
 
 import {HotKeys} from 'react-hotkeys'
