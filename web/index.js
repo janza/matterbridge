@@ -1,47 +1,57 @@
-import { h, render, Component } from 'preact'
+import { h, render, Component } from 'preact'  // eslint-disable-line
+import makeAccumulator from 'sorted-immutable-list'
+import humanDate from 'tiny-human-time'
+import Linkify from 'react-linkify'
+import sanitizeHtml from 'sanitize-html'
+import Parse from 'react-html-parser'
+import AutoScroll from 'react-auto-scroll'
+import ColorAssigner from '@convergence/color-assigner'
 import {
-  Button,
   Comment,
-  Dropdown,
   Form,
-  Grid,
   Header,
-  Icon,
   Input,
   Menu,
   Segment,
-  Sidebar,
+  Sidebar
 } from 'semantic-ui-react'
 
 import {HotKeys} from 'react-hotkeys'
 
-var ws = new WebSocket('ws://localhost:8001/ws')
+var color = new ColorAssigner()
+
+var ws = new window.WebSocket('ws://localhost:8001/ws')
+
+const addMessage = makeAccumulator({
+  key: msg => msg.Timestamp,
+  unique: false
+})
 
 var state = {
   messages: [],
   activeChannel: {},
   channels: {},
-  users: {},
+  users: {}
 }
 
-const newChannel = (channels, account, channel) => {
-  return channels.filter((c) => c.account === account && c.channel === channel)[0] || {
-    account, channel
-  };
-}
+ws.addEventListener('open', function () {
+  sendCommand('get_channels')
+  sendCommand('get_users')
+})
 
 ws.addEventListener('message', function (msg, flags) {
   const data = JSON.parse(msg.data)
 
   if (data.Type === 'message') {
     updateState(Object.assign({}, state, {
-      messages: state.messages.concat([
-        data.Message
-      ]).sort(
-        (a, b) => a.Timestamp < b.Timestamp ? -1 : (a.Timestamp == b.Timestamp ? 0 : 1)
-      ),
+      messages: addMessage(
+        state.messages,
+        Object.assign(
+          {},
+          data.Message,
+          { niceTime: humanDate(new Date(data.Message.Timestamp), new Date()) }))
     }))
-  } else if (data.Type === 'user')  {
+  } else if (data.Type === 'user') {
     updateState(
       Object.assign(
         {},
@@ -56,7 +66,7 @@ ws.addEventListener('message', function (msg, flags) {
         }
       )
     )
-  } else if (data.Type === 'channel')  {
+  } else if (data.Type === 'channel') {
     updateState(
       Object.assign(
         {},
@@ -75,16 +85,15 @@ ws.addEventListener('message', function (msg, flags) {
 })
 
 ws.addEventListener('close', function () {
-  ws = new WebSocket('ws://localhost:8001/ws')
-});
+  ws = new window.WebSocket('ws://localhost:8001/ws')
+})
 
-var stateThrottle;
+var stateThrottle
 
 function updateState (newState) {
   window.state = state = newState
-  clearTimeout(stateThrottle);
-  stateThrottle = setTimeout(() => redraw(state), 100);
-  // redraw(state)
+  clearTimeout(stateThrottle)
+  stateThrottle = setTimeout(() => redraw(state), 100)
 }
 
 function setActiveChannel (channel) {
@@ -92,17 +101,31 @@ function setActiveChannel (channel) {
   updateState(Object.assign({}, state, {
     activeChannel: channel
   }))
-  sendCommand("replay_messages", channel.ID)
+  var existingMessages = getMessagesInChannel(state.messages, channel)
+  if (existingMessages.length < 100) {
+    var commandParams = {
+      Channel: channel.ID
+    }
+    if (existingMessages.length) {
+      commandParams.Offset = existingMessages[0].Timestamp
+    }
+    sendCommand('replay_messages', commandParams)
+  }
 }
 
-function sendCommand (Command, Param) {
+function sendCommand (Command, Params) {
   ws.send(JSON.stringify({
-    Command: { Command, Param }
+    Type: 'command',
+    Message: {
+      Type: Command,
+      Command: Object.assign({}, Params)
+    }
   }))
 }
 
 function sendMessage ({Account, Channel, User}, text) {
   ws.send(JSON.stringify({
+    Type: 'message',
     Message: {
       Channel: Channel || User,
       To: Account,
@@ -111,68 +134,95 @@ function sendMessage ({Account, Channel, User}, text) {
   }))
 }
 
-const Feed = ({messages, activeChannel, users}) => {
-  var previousUsername;
-  return <Comment.Group minimal>
-    { messages.filter(
-      m => {
-        return (
-          m.Channel === activeChannel.Channel
-          || m.Channel === activeChannel.User
-        ) && (
-          m.Account === activeChannel.Account
-          || m.To === activeChannel.Account
-        )
-      }
-    ).map((m) => {
-      const differentUser = m.Username !== previousUsername
-      previousUsername = m.Username
-      const user = users[`${m.Username}:${m.Account}`]
-      const userName = user && user.Name || m.Username
-      return <Comment>
-        {
-          differentUser
-            ? <Comment.Avatar as='a' src={'https://robohash.org/' + m.Username} />
-            : <Comment.Avatar />
-        }
-        <Comment.Content>
-          { differentUser ? <Comment.Author as='a'>{ userName }</Comment.Author> : null }
-          { differentUser
-              ?<Comment.Metadata>
-                <span>{ m.Timestamp }</span>
-              </Comment.Metadata>
-              : null }
-          <Comment.Text>{ m.Text }</Comment.Text>
-        </Comment.Content>
-      </Comment>
-    }) }
-  </Comment.Group>
+function getMessagesInChannel (messages, channel) {
+  return messages.filter(
+    m => {
+      return (
+        m.Channel === channel.Channel ||
+        m.Channel === channel.User
+      ) && (
+        m.Account === channel.Account ||
+        m.To === channel.Account
+      )
+    }
+  )
 }
+
+function groupSameUsers (messages) {
+  var lastUser
+  return messages.reduce((grouppedMessages, m) => {
+    if (lastUser === m.Username) {
+      const lastMsg = Object.assign({}, grouppedMessages.pop())
+      lastMsg.Text += '\n' + m.Text
+      m = lastMsg
+    }
+    lastUser = m.Username
+    return grouppedMessages.concat([m])
+  }, [])
+}
+
+function nicerText (text) {
+  return text.replace(/(\n)+/g, '\n')
+}
+
+class Feed extends Component {
+  render () {
+    return <Comment.Group minimal className='feed'>
+      {
+        groupSameUsers(getMessagesInChannel(
+          this.props.messages, this.props.activeChannel)
+        ).map((m) => {
+          const user = this.props.users[`${m.Username}:${m.Account}`]
+          const userName = user && user.Name || m.Username
+          return <Comment>
+            <Comment.Content>
+              <Comment.Author as='a' style={{ color: color.getColorAsRgba(userName) }}>
+                { userName }
+              </Comment.Author>
+              <Comment.Metadata>
+                <span>{ m.niceTime }</span>
+              </Comment.Metadata>
+              <Comment.Text>
+                <Linkify>{ Parse(sanitizeHtml(nicerText(m.Text))) }</Linkify>
+              </Comment.Text>
+            </Comment.Content>
+          </Comment>
+        })
+      }
+    </Comment.Group>
+  }
+}
+
+const AutoScrollFeed = AutoScroll({
+  property: 'messages',
+  alwaysScroll: true
+})(Feed)
 
 class Channels extends Component {
 
-  constructor() {
+  constructor () {
     super()
     this.state.filter = ''
   }
 
-  focusChannelSearch() {
+  focusChannelSearch () {
     this.channelSearch.focus()
+    this.channelSearch.select()
   }
 
-  searchChannel(e) {
+  searchChannel (e) {
     const filter = e.target.value
     this.setState({filter: filter})
     const newActiveChannel = this.props.channels.filter(c => {
       return !this.state.filter || c.ID.indexOf(this.state.filter) >= 0
-    })[0];
+    })[0]
 
     if (!newActiveChannel) return
     setActiveChannel(newActiveChannel)
   }
 
-  render({channels, activeChannel, visible}) {
-    return <Sidebar as={Menu} animation='push' visible={visible} icon='labeled' vertical inverted>
+  render ({channels, activeChannel, visible}) {
+    return <div>
       <Menu.Item>
         <Input placeholder='Search...' >
           <input
@@ -186,18 +236,17 @@ class Channels extends Component {
         channels.filter(c => {
           return c.ID && (!this.state.filter || c.ID.indexOf(this.state.filter) >= 0)
         }).map(c => (
-          <Menu.Item onClick={() => setActiveChannel(c)} active={c == activeChannel} >
+          <Menu.Item onClick={() => setActiveChannel(c)} active={c === activeChannel} >
             <span style={{
               maxWidth: '140px',
               overflow: 'hidden',
-              display: 'inline-block'
-            }}>
-            {c.Name || c.ID}
+              display: 'inline-block' }}>
+              { c.Name || c.ID }
             </span>
           </Menu.Item>
         ))
       }
-    </Sidebar>
+    </div>
   }
 }
 
@@ -209,7 +258,6 @@ const MessageInput = ({activeChannel}) => {
   }}>
     <Input fluid name='msg' action='Send' placeholder='Type in something...' />
   </Form>
-
 }
 
 const keyMap = {
@@ -217,34 +265,35 @@ const keyMap = {
 }
 
 class App extends Component {
-  render({state}) {
-
+  render ({state}) {
     return <HotKeys
       keyMap={keyMap}
       style={{height: '100%'}}
       handlers={{
         'focusChannelSearch': () => this.channels.focusChannelSearch()
       }}>
-      <Sidebar.Pushable as={Segment}>
-        <Channels
-          ref={(el) => this.channels = el}
-          visible
-          channels={Object.values(state.channels).concat(Object.values(state.users))}
-          activeChannel={state.activeChannel} />
-        <Sidebar.Pusher style={{ maxHeight: '100%', overflowY: 'scroll'}}>
+      <div class='content'>
+        <div class='chat-sidebar ui vertical inverted menu'>
+          <Channels
+            ref={(el) => { this.channels = el }}
+            visible
+            channels={Object.values(state.channels).concat(Object.values(state.users))}
+            activeChannel={state.activeChannel} />
+        </div>
+        <div class='chat'>
           <Header as='h2' content={state.activeChannel.Name} />
-          <Feed messages={state.messages} users={state.users} activeChannel={state.activeChannel} />
+          <AutoScrollFeed messages={state.messages} users={state.users} activeChannel={state.activeChannel} />
           <MessageInput activeChannel={state.activeChannel} />
-        </Sidebar.Pusher>
-      </Sidebar.Pushable>
+        </div>
+      </div>
     </HotKeys>
   }
 }
 
-function redraw ({messages}) {
+function redraw (newState) {
   const chat = document.querySelector('#chat')
-  chat.style.height = '100%';
-  render((<App state={state}/>), chat, chat.lastChild)
+  chat.style.height = '100%'
+  render((<App state={newState} />), chat, chat.lastChild)
 }
 
 redraw(state)

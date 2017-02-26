@@ -8,9 +8,18 @@
     "webpack": "^1.14.0"
   },
   "dependencies": {
+    "@convergence/color-assigner": "^0.1.1",
+    "html-react-parser": "^0.3.3",
+    "json-loader": "^0.5.4",
     "preact-compat": "^3.13.0",
+    "react-auto-scroll": "https://github.com/uneart/react-auto-scroll/archive/master.tar.gz",
     "react-hotkeys": "^0.9.0",
+    "react-html-parser": "^1.0.3",
+    "react-linkify": "^0.2.0",
+    "sanitize-html": "^1.14.1",
     "semantic-ui-react": "^0.64.4",
+    "sorted-immutable-list": "^1.1.0",
+    "tiny-human-time": "^1.2.0",
     "ws": "^1.1.1"
   }
 }

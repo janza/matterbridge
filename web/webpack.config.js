@@ -1,10 +1,10 @@
 var path = require('path')
 
 module.exports = {
-  entry: "./index.js",
+  entry: './index.js',
   output: {
     path: path.join(__dirname, 'dist'),
-    filename: "bundle.js"
+    filename: 'bundle.js'
   },
   module: {
     loaders: [
@@ -12,6 +12,10 @@ module.exports = {
         test: /\.js$/,
         exclude: /(node_modules|bower_components)/,
         loader: 'babel-loader?presets[]=es2015'
+      },
+      {
+        test: /\.json$/,
+        loader: 'json-loader'
       }
     ]
   },
@@ -21,4 +25,4 @@ module.exports = {
       'react-dom': 'preact-compat'
     }
   }
-};
+}

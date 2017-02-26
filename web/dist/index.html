@@ -5,6 +5,42 @@
     <meta name="viewport" content="width=device-width" />
     <title>Index</title>
     <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/semantic-ui/2.2.2/semantic.min.css"></link>
+    <style>
+.text {
+  white-space: pre;
+}
+
+.content {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ui.chat-sidebar {
+  width: 200px;
+  height: 100%;
+  border-radius: 0;
+  overflow-y: scroll;
+  overflow-x: hidden;
+}
+
+.chat {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  width: calc(100% - 200px);
+  flex-direction: column;
+  padding: 1em;
+}
+
+.feed {
+  flex: 2;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  white-space: wrap-word;
+  max-width: none!important;
+}
+    </style>
   </head>
   <body>
     <div id="chat"></div>
