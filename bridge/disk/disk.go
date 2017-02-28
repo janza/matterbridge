@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"container/list"
 	"encoding/json"
-	"github.com/42wim/matterbridge/bridge/config"
-	log "github.com/Sirupsen/logrus"
 	"io"
 	"io/ioutil"
 	"os"
 	"time"
+
+	"github.com/42wim/matterbridge/bridge/config"
+	log "github.com/Sirupsen/logrus"
 )
 
 type Bdisk struct {
@@ -152,9 +153,9 @@ func (b *Bdisk) TailLog(filename string, n int, offset time.Time) list.List {
 			break
 		}
 
-		l.PushFront(msg)
+		l.PushBack(msg)
 		if l.Len() > n {
-			l.Remove(l.Back())
+			l.Remove(l.Front())
 		}
 	}
 

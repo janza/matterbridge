@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"sort"
 	"sync"
 	"time"
 
@@ -36,6 +37,21 @@ type key struct {
 func random(min, max int) int {
 	rand.Seed(time.Now().Unix())
 	return rand.Intn(max-min) + min
+}
+
+func insertMessage(s []config.Message, f config.Message) []config.Message {
+	l := len(s)
+	if l == 0 {
+		return []config.Message{f}
+	}
+
+	i := sort.Search(l, func(i int) bool {
+		return s[i].Timestamp.After(f.Timestamp)
+	})
+	s = append(s, f)
+	copy(s[i+1:], s[i:])
+	s[i] = f
+	return s
 }
 
 func main() {
@@ -71,30 +87,34 @@ func main() {
 
 func layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
-	if v, err := g.SetView("chan", -1, -1, 12, maxY); err != nil {
+	if v, err := g.SetView("chan", -1, -1, 12, maxY-1); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
+		v.Frame = false
 		fmt.Fprintln(v, "Channels")
 	}
-	if v, err := g.SetView("msg", 13, -1, maxX, maxY); err != nil {
+	if v, err := g.SetView("msgs", 13, -1, maxX, maxY-1); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
+		v.Autoscroll = true
+		v.Frame = false
 		fmt.Fprintln(v, "Msgs")
 	}
-
-	vChan, err := g.View("chan")
-	if err != nil {
-		log.Panicln(err)
+	if v, err := g.SetView("input", -1, maxY-2, maxX, maxY); err != nil {
+		if err != gocui.ErrUnknownView {
+			return err
+		}
+		if _, err := g.SetCurrentView("input"); err != nil {
+			return err
+		}
+		fmt.Fprintf(v, blueColor)
+		v.FgColor = gocui.ColorYellow
+		v.Editable = true
+		v.Wrap = true
+		v.Frame = false
 	}
-	vChan.Frame = false
-
-	vMsg, err := g.View("msg")
-	if err != nil {
-		log.Panicln(err)
-	}
-	vMsg.Frame = false
 	return nil
 }
 
@@ -183,11 +203,16 @@ func redrawChannels(g *gocui.Gui, channels channelSlice, activeChannel config.Ch
 }
 
 func (c *comms) fetchMessages() {
+	channelMsgs := c.storage.messages[c.storage.activeChannel.ID]
+	getMessages := config.GetMessagesCommand{
+		Channel: c.storage.activeChannel.ID,
+	}
+	if len(channelMsgs) > 0 {
+		getMessages.Offset = channelMsgs[0].Timestamp
+	}
 	c.commands <- config.Command{
-		Type: "replay_messages",
-		Command: config.GetMessagesCommand{
-			Channel: c.storage.activeChannel.ID,
-		},
+		Type:    "replay_messages",
+		Command: getMessages,
 	}
 }
 
@@ -206,7 +231,7 @@ func formatTime(t time.Time) string {
 
 func (c *comms) redraw(g *gocui.Gui) error {
 
-	vMsg, err := g.View("msg")
+	vMsg, err := g.View("msgs")
 	if err != nil {
 		return err
 	}
@@ -215,9 +240,9 @@ func (c *comms) redraw(g *gocui.Gui) error {
 
 	activeChannelMsgs := c.storage.messages[c.storage.activeChannel.ID]
 
-	_, y := vMsg.Size()
+	// _, y := vMsg.Size()
 	l := len(activeChannelMsgs)
-	for i := l - y; i >= 0 && i < l; i++ {
+	for i := 0; i < l; i++ {
 		msg := activeChannelMsgs[i]
 		fmt.Fprintf(
 			vMsg,
@@ -233,6 +258,10 @@ func (c *comms) redraw(g *gocui.Gui) error {
 	}
 
 	redrawChannels(g, c.storage.channels, c.storage.activeChannel)
+
+	if _, err := g.SetCurrentView("input"); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -294,7 +323,7 @@ func (c *comms) websocketConnect(g *gocui.Gui) {
 
 		if msg.Type == "message" {
 			bucket := msg.Message.Channel + ":" + msg.Message.Account
-			c.storage.messages[bucket] = append(c.storage.messages[bucket], msg.Message)
+			c.storage.messages[bucket] = insertMessage(c.storage.messages[bucket], msg.Message)
 		}
 
 		g.Execute(func(g *gocui.Gui) error {
