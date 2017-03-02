@@ -15,6 +15,7 @@ import (
 
 	"github.com/42wim/matterbridge/bridge/config"
 	"github.com/42wim/matterbridge/bridge/web"
+	"github.com/fatih/color"
 	"github.com/gorilla/websocket"
 	"github.com/jroimartin/gocui"
 )
@@ -23,11 +24,10 @@ var (
 	done = make(chan struct{})
 	wg   sync.WaitGroup
 
-	grayColor  = "\033[0;37m"
-	whiteColor = "\033[1;37m"
-	redColor   = "\033[0;31m"
-	blueColor  = "\033[1;32m"
-	resetColor = "\033[0m"
+	grayColor  = color.New(color.FgHiGreen).SprintFunc()
+	whiteColor = color.New(color.FgWhite).SprintFunc()
+	redColor   = color.New(color.FgRed).SprintFunc()
+	blueColor  = color.New(color.FgBlue).SprintFunc()
 )
 
 type key struct {
@@ -55,7 +55,7 @@ func insertMessage(s []config.Message, f config.Message) []config.Message {
 }
 
 func main() {
-	g, err := gocui.NewGui(gocui.OutputNormal)
+	g, err := gocui.NewGui(gocui.Output256)
 	if err != nil {
 		log.Panicln(err)
 	}
@@ -100,6 +100,7 @@ func layout(g *gocui.Gui) error {
 		}
 		v.Autoscroll = true
 		v.Frame = false
+		v.Wrap = true
 		fmt.Fprintln(v, "Msgs")
 	}
 	if v, err := g.SetView("input", -1, maxY-2, maxX, maxY); err != nil {
@@ -109,7 +110,6 @@ func layout(g *gocui.Gui) error {
 		if _, err := g.SetCurrentView("input"); err != nil {
 			return err
 		}
-		fmt.Fprintf(v, blueColor)
 		v.FgColor = gocui.ColorYellow
 		v.Editable = true
 		v.Wrap = true
@@ -193,12 +193,11 @@ func redrawChannels(g *gocui.Gui, channels channelSlice, activeChannel config.Ch
 	vChan, _ := g.View("chan")
 	vChan.Clear()
 	for _, channel := range channels {
-		c1, c2 := "", ""
 		if channel == activeChannel {
-			c1 = redColor
-			c2 = resetColor
+			fmt.Fprintf(vChan, "%s\n", redColor(channel.Name))
+		} else {
+			fmt.Fprintf(vChan, "%s\n", channel.Name)
 		}
-		fmt.Fprintf(vChan, "%s%s%s\n", c1, channel.Name, c2)
 	}
 }
 
@@ -225,6 +224,14 @@ func (c *comms) getUser(account, userID string) config.User {
 	return config.User{Name: userID}
 }
 
+func colorize(s string) string {
+	sum := 0
+	for _, c := range s {
+		sum = (sum + int(c)) % 256
+	}
+	return fmt.Sprintf("\x1b[38;5;%dm%s\x1b[0m", sum, s)
+}
+
 func formatTime(t time.Time) string {
 	return t.Format("15:04")
 }
@@ -244,16 +251,13 @@ func (c *comms) redraw(g *gocui.Gui) error {
 	l := len(activeChannelMsgs)
 	for i := 0; i < l; i++ {
 		msg := activeChannelMsgs[i]
+		userName := c.getUser(msg.Account, msg.Username).Name
 		fmt.Fprintf(
 			vMsg,
-			"%s%s %s%s: %s%s%s\n",
-			grayColor,
-			formatTime(msg.Timestamp),
-			blueColor,
-			c.getUser(msg.Account, msg.Username).Name,
-			whiteColor,
-			msg.Text,
-			resetColor,
+			"%s %s: %s\n",
+			grayColor(formatTime(msg.Timestamp)),
+			colorize(userName),
+			whiteColor(msg.Text),
 		)
 	}
 
