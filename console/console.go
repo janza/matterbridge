@@ -18,17 +18,21 @@ import (
 	"github.com/fatih/color"
 	"github.com/gorilla/websocket"
 	"github.com/jroimartin/gocui"
+	"github.com/plar/go-adaptive-radix-tree"
 )
 
 var (
 	done = make(chan struct{})
 	wg   sync.WaitGroup
+	mut  = &sync.Mutex{}
 
 	grayColor  = color.New(color.FgHiGreen).SprintFunc()
 	whiteColor = color.New(color.FgWhite).SprintFunc()
 	redColor   = color.New(color.FgRed).SprintFunc()
 	blueColor  = color.New(color.FgBlue).SprintFunc()
 )
+
+// type MessageLog art.Tree
 
 type key struct {
 	command string
@@ -67,7 +71,7 @@ func main() {
 		messages: make(chan config.Message),
 		commands: make(chan config.Command),
 		storage: storage{
-			messages: make(map[string][]config.Message),
+			messages: make(map[string]art.Tree),
 		},
 	}
 
@@ -153,7 +157,7 @@ type storage struct {
 	activeChannel config.Channel
 	channels      channelSlice
 	users         []config.User
-	messages      map[string][]config.Message
+	messages      map[string]art.Tree
 }
 
 type comms struct {
@@ -202,12 +206,18 @@ func redrawChannels(g *gocui.Gui, channels channelSlice, activeChannel config.Ch
 }
 
 func (c *comms) fetchMessages() {
-	channelMsgs := c.storage.messages[c.storage.activeChannel.ID]
 	getMessages := config.GetMessagesCommand{
 		Channel: c.storage.activeChannel.ID,
 	}
-	if len(channelMsgs) > 0 {
-		getMessages.Offset = channelMsgs[0].Timestamp
+	if channelMsgs, ok := c.storage.messages[c.storage.activeChannel.ID]; ok {
+		mut.Lock()
+		msgs := channelMsgs.Iterator()
+		if msgs.HasNext() {
+			firstMsg, _ := msgs.Next()
+			msg, _ := firstMsg.Value().(config.Message)
+			getMessages.Offset = msg.Timestamp
+		}
+		mut.Unlock()
 	}
 	c.commands <- config.Command{
 		Type:    "replay_messages",
@@ -245,20 +255,25 @@ func (c *comms) redraw(g *gocui.Gui) error {
 	vMsg.Clear()
 	fmt.Fprintln(vMsg, c.storage.activeChannel.Name)
 
-	activeChannelMsgs := c.storage.messages[c.storage.activeChannel.ID]
-
-	// _, y := vMsg.Size()
-	l := len(activeChannelMsgs)
-	for i := 0; i < l; i++ {
-		msg := activeChannelMsgs[i]
-		userName := c.getUser(msg.Account, msg.Username).Name
-		fmt.Fprintf(
-			vMsg,
-			"%s %s: %s\n",
-			grayColor(formatTime(msg.Timestamp)),
-			colorize(userName),
-			whiteColor(msg.Text),
-		)
+	if activeChannelMsgs, ok := c.storage.messages[c.storage.activeChannel.ID]; ok {
+		mut.Lock()
+		for it := activeChannelMsgs.Iterator(); it.HasNext(); {
+			node, err := it.Next()
+			if err != nil || node.Kind() != art.Leaf {
+				panic(err)
+			}
+			value := node.Value()
+			msg, _ := value.(config.Message)
+			userName := c.getUser(msg.Account, msg.Username).Name
+			fmt.Fprintf(
+				vMsg,
+				"%s %s: %s\n",
+				grayColor(formatTime(msg.Timestamp)),
+				colorize(userName),
+				whiteColor(msg.Text),
+			)
+		}
+		mut.Unlock()
 	}
 
 	redrawChannels(g, c.storage.channels, c.storage.activeChannel)
@@ -327,7 +342,12 @@ func (c *comms) websocketConnect(g *gocui.Gui) {
 
 		if msg.Type == "message" {
 			bucket := msg.Message.Channel + ":" + msg.Message.Account
-			c.storage.messages[bucket] = insertMessage(c.storage.messages[bucket], msg.Message)
+			if _, ok := c.storage.messages[bucket]; !ok {
+				c.storage.messages[bucket] = art.New()
+			}
+			mut.Lock()
+			c.storage.messages[bucket].Insert(art.Key(msg.Message.GetKey()), msg.Message)
+			mut.Unlock()
 		}
 
 		g.Execute(func(g *gocui.Gui) error {

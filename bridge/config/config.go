@@ -2,12 +2,14 @@ package config
 
 import (
 	"fmt"
-	"github.com/BurntSushi/toml"
+	"hash/adler32"
 	"log"
 	"os"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/BurntSushi/toml"
 )
 
 const (
@@ -27,6 +29,14 @@ type Message struct {
 	IsPriv    bool
 	Timestamp time.Time
 	Protocol  string
+}
+
+func (m *Message) GetKey() string {
+	return m.Timestamp.String() + string(adler32.Checksum([]byte(m.Text)))
+}
+
+func (m *Message) SetTimestamp() {
+	m.Timestamp = time.Now()
 }
 
 type User struct {
