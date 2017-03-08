@@ -32,8 +32,6 @@ var (
 	blueColor  = color.New(color.FgBlue).SprintFunc()
 )
 
-// type MessageLog art.Tree
-
 type key struct {
 	command string
 }
