@@ -18,6 +18,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/gorilla/websocket"
 	"github.com/jroimartin/gocui"
+	"github.com/kennygrant/sanitize"
 	"github.com/plar/go-adaptive-radix-tree"
 )
 
@@ -26,14 +27,17 @@ var (
 	wg   sync.WaitGroup
 	mut  = &sync.Mutex{}
 
-	grayColor  = color.New(color.FgHiGreen).SprintFunc()
-	whiteColor = color.New(color.FgWhite).SprintFunc()
-	redColor   = color.New(color.FgRed).SprintFunc()
-	blueColor  = color.New(color.FgBlue).SprintFunc()
+	grayColor = color.New(color.FgHiGreen).SprintFunc()
+	redColor  = color.New(color.FgRed).SprintFunc()
+	blueColor = color.New(color.FgBlue).SprintFunc()
 )
 
 type key struct {
 	command string
+}
+
+func whiteColor(s string) string {
+	return fmt.Sprintf("\x1b[38;5;%dm%s\x1b[0m", 256, s)
 }
 
 func random(min, max int) int {
@@ -69,7 +73,9 @@ func main() {
 		messages: make(chan config.Message),
 		commands: make(chan config.Command),
 		storage: storage{
-			messages: make(map[string]art.Tree),
+			messages:       make(map[string]art.Tree),
+			unreadMessages: make(messagesInChannel),
+			totalMessages:  make(messagesInChannel),
 		},
 	}
 
@@ -89,14 +95,15 @@ func main() {
 
 func layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
-	if v, err := g.SetView("chan", -1, -1, 12, maxY-1); err != nil {
+	channelsWidth := 20
+	if v, err := g.SetView("chan", -1, 0, channelsWidth, maxY-1); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
 		v.Frame = false
 		fmt.Fprintln(v, "Channels")
 	}
-	if v, err := g.SetView("msgs", 13, -1, maxX, maxY-1); err != nil {
+	if v, err := g.SetView("msgs", channelsWidth+1, 0, maxX, maxY-1); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
@@ -151,11 +158,44 @@ func (slice channelSlice) pos(value config.Channel) int {
 	return -1
 }
 
+func (slice channelSlice) Sort(unreadMessages messagesInChannel, totalMessages messagesInChannel) {
+	cs := &channelSorter{
+		channelSlice:   slice,
+		unreadMessages: unreadMessages,
+		totalMessages:  totalMessages,
+	}
+
+	sort.Sort(cs)
+}
+
+type messagesInChannel map[string]int
+
+type channelSorter struct {
+	channelSlice   channelSlice
+	unreadMessages messagesInChannel
+	totalMessages  messagesInChannel
+}
+
+func (c *channelSorter) Len() int { return len(c.channelSlice) }
+func (c *channelSorter) Swap(i, j int) {
+	c.channelSlice[i], c.channelSlice[j] = c.channelSlice[j], c.channelSlice[i]
+}
+func (c *channelSorter) Less(i, j int) bool {
+	u1 := c.unreadMessages[c.channelSlice[i].ID]
+	u2 := c.unreadMessages[c.channelSlice[j].ID]
+	if u1 == u2 {
+		return c.totalMessages[c.channelSlice[i].ID] > c.totalMessages[c.channelSlice[j].ID]
+	}
+	return u1 > u2
+}
+
 type storage struct {
-	activeChannel config.Channel
-	channels      channelSlice
-	users         []config.User
-	messages      map[string]art.Tree
+	activeChannel  config.Channel
+	channels       channelSlice
+	unreadMessages messagesInChannel
+	totalMessages  messagesInChannel
+	users          []config.User
+	messages       map[string]art.Tree
 }
 
 type comms struct {
@@ -177,6 +217,7 @@ func (c *comms) selectNextChan(g *gocui.Gui, v *gocui.View) error {
 	l := len(c.storage.channels)
 	pos := c.storage.channels.pos(c.storage.activeChannel)
 	c.storage.activeChannel = c.storage.channels[(pos+1)%l]
+	c.storage.unreadMessages[c.storage.activeChannel.ID] = 0
 	c.fetchMessages()
 	c.redraw(g)
 	return nil
@@ -186,19 +227,24 @@ func (c *comms) selectPrevChan(g *gocui.Gui, v *gocui.View) error {
 	l := len(c.storage.channels)
 	pos := c.storage.channels.pos(c.storage.activeChannel)
 	c.storage.activeChannel = c.storage.channels[(pos+l-1)%l]
+	c.storage.unreadMessages[c.storage.activeChannel.ID] = 0
 	c.fetchMessages()
 	c.redraw(g)
 	return nil
 }
 
-func redrawChannels(g *gocui.Gui, channels channelSlice, activeChannel config.Channel) {
+func redrawChannels(g *gocui.Gui, channels channelSlice, activeChannel config.Channel, unreadMessages messagesInChannel) {
 	vChan, _ := g.View("chan")
 	vChan.Clear()
 	for _, channel := range channels {
+		if unreadMessages[channel.ID] != 0 {
+			fmt.Fprintf(vChan, "(%d) ", unreadMessages[channel.ID])
+		}
+		format := "%s\n"
 		if channel == activeChannel {
-			fmt.Fprintf(vChan, "%s\n", redColor(channel.Name))
+			fmt.Fprintf(vChan, format, redColor(channel.Name))
 		} else {
-			fmt.Fprintf(vChan, "%s\n", channel.Name)
+			fmt.Fprintf(vChan, format, channel.Name)
 		}
 	}
 }
@@ -268,13 +314,15 @@ func (c *comms) redraw(g *gocui.Gui) error {
 				"%s %s: %s\n",
 				grayColor(formatTime(msg.Timestamp)),
 				colorize(userName),
-				whiteColor(msg.Text),
+				whiteColor(sanitize.HTML(msg.Text)),
 			)
 		}
 		mut.Unlock()
 	}
 
-	redrawChannels(g, c.storage.channels, c.storage.activeChannel)
+	mut.Lock()
+	redrawChannels(g, c.storage.channels, c.storage.activeChannel, c.storage.unreadMessages)
+	mut.Unlock()
 
 	if _, err := g.SetCurrentView("input"); err != nil {
 		return err
@@ -345,6 +393,11 @@ func (c *comms) websocketConnect(g *gocui.Gui) {
 			}
 			mut.Lock()
 			c.storage.messages[bucket].Insert(art.Key(msg.Message.GetKey()), msg.Message)
+			c.storage.totalMessages[bucket]++
+			if c.storage.activeChannel.ID != bucket {
+				c.storage.unreadMessages[bucket]++
+			}
+			c.storage.channels.Sort(c.storage.unreadMessages, c.storage.totalMessages)
 			mut.Unlock()
 		}
 
