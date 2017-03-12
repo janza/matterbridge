@@ -1,7 +1,3 @@
-// Copyright 2014 The gocui Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package main
 
 import (
@@ -20,6 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jroimartin/gocui"
 	"github.com/kennygrant/sanitize"
+	"github.com/kr/text"
 	"github.com/plar/go-adaptive-radix-tree"
 )
 
@@ -28,9 +25,10 @@ var (
 	wg   sync.WaitGroup
 	mut  = &sync.Mutex{}
 
-	grayColor = color.New(color.FgHiGreen).SprintFunc()
-	redColor  = color.New(color.FgRed).SprintFunc()
-	blueColor = color.New(color.FgBlue).SprintFunc()
+	grayColor   = color.New(color.FgHiGreen).SprintFunc()
+	redColor    = color.New(color.FgRed).SprintFunc()
+	yellowColor = color.New(color.FgYellow).SprintFunc()
+	blueColor   = color.New(color.FgBlue).SprintFunc()
 )
 
 type key struct {
@@ -66,7 +64,9 @@ func main() {
 	if err != nil {
 		log.Panicln(err)
 	}
-	defer g.Close()
+	defer func() {
+		g.Close()
+	}()
 
 	ws := &comms{
 		messages: make(chan config.Message),
@@ -111,42 +111,66 @@ func filterChannels(channels channelSlice, f func(config.Channel) bool) channelS
 	return vsf
 }
 
+func (c *comms) redrawChannelSelector(v *gocui.View, selectionIndex int) {
+	c.storage.filteredChannels = filterChannels(c.storage.channels, func(channel config.Channel) bool {
+		return strings.Contains(channel.ID, c.storage.channelFilter)
+	})
+	c.storage.filteredChannels.Sort(c.storage.unreadMessages, c.storage.totalMessages)
+
+	v.Clear()
+	for i, channel := range c.storage.filteredChannels {
+		format := "%s\n"
+		output := strings.Replace(
+			channel.ID,
+			c.storage.channelFilter,
+			redColor(c.storage.channelFilter), 1)
+		if i == selectionIndex {
+			output = yellowColor(output)
+		}
+		fmt.Fprintf(v, format, output)
+	}
+}
+
 func (c *comms) channelEditor(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
 	switch {
 	case ch != 0 && mod == 0:
 		c.storage.channelFilter += string(ch)
 	case key == gocui.KeySpace:
 		c.storage.channelFilter += " "
+	case key == gocui.KeyCtrlJ:
+		c.storage.channelIndex++
+	case key == gocui.KeyCtrlK:
+		c.storage.channelIndex--
 	case key == gocui.KeyBackspace || key == gocui.KeyBackspace2:
 		if len(c.storage.channelFilter) > 0 {
 			c.storage.channelFilter = c.storage.channelFilter[:len(c.storage.channelFilter)-1]
 		}
 	case key == gocui.KeyEnter:
-		if len(c.storage.filteredChannels) > 0 {
-			c.setActiveChannel(c.storage.filteredChannels[0])
+		nChannels := len(c.storage.filteredChannels)
+		c.storage.channelIndex = (c.storage.channelIndex + nChannels) % nChannels
+		if nChannels > 0 {
+			c.setActiveChannel(c.storage.filteredChannels[c.storage.channelIndex])
 		}
 		c.g.SetViewOnTop("layout")
 		c.g.SetViewOnTop("chan")
 		c.g.SetViewOnTop("msgs")
 		c.g.SetCurrentView("input")
 		c.g.SetViewOnTop("input")
+		c.g.SetViewOnTop("active_channel")
 		c.redraw(c.g)
+		return
 	}
-	c.storage.filteredChannels = filterChannels(c.storage.filteredChannels, func(channel config.Channel) bool {
-		return strings.Contains(channel.ID, c.storage.channelFilter)
-	})
-
-	v.Clear()
-	for _, channel := range c.storage.filteredChannels {
-		format := "%s\n"
-		fmt.Fprintf(v, format, channel.Name)
+	nChannels := len(c.storage.filteredChannels)
+	if nChannels > 0 {
+		c.storage.channelIndex = (c.storage.channelIndex + nChannels) % nChannels
 	}
+	c.redrawChannelSelector(v, c.storage.channelIndex)
 }
 
 func (c *comms) layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
 	channelsWidth := 20
-	activeChannelHeight := 2
+	activeChannelHeight := 1
 	if v, err := g.SetView("chan_selector", -1, -1, maxX, maxY); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
@@ -156,11 +180,10 @@ func (c *comms) layout(g *gocui.Gui) error {
 		v.Wrap = true
 		v.Editor = gocui.EditorFunc(c.channelEditor)
 	}
-	if v, err := g.SetView("active_channel", -1, 0, maxX, activeChannelHeight); err != nil {
+	if v, err := g.SetView("active_channel", -1, -1, maxX, activeChannelHeight); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
-		v.Frame = false
 		fmt.Fprintln(v, "Active Channel")
 	}
 	if v, err := g.SetView("chan", -1, activeChannelHeight, channelsWidth, maxY-1); err != nil {
@@ -168,14 +191,13 @@ func (c *comms) layout(g *gocui.Gui) error {
 			return err
 		}
 		v.Frame = false
-		fmt.Fprintln(v, "Channels")
 	}
 	if v, err := g.SetView("msgs", channelsWidth+1, activeChannelHeight, maxX, maxY-1); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
 		v.Autoscroll = true
-		v.Frame = false
+		v.Frame = true
 		v.Wrap = true
 		fmt.Fprintln(v, "Msgs")
 	}
@@ -186,7 +208,7 @@ func (c *comms) layout(g *gocui.Gui) error {
 		v.FgColor = gocui.ColorYellow
 		v.Editable = true
 		v.Wrap = true
-		v.Frame = false
+		v.Frame = true
 	}
 	return nil
 }
@@ -196,11 +218,11 @@ func keybindings(g *gocui.Gui, c *comms) error {
 		return err
 	}
 
-	if err := g.SetKeybinding("", gocui.KeyCtrlJ, gocui.ModNone, c.selectNextChan); err != nil {
+	if err := g.SetKeybinding("input", gocui.KeyCtrlJ, gocui.ModNone, c.selectNextChan); err != nil {
 		return err
 	}
 
-	if err := g.SetKeybinding("", gocui.KeyCtrlK, gocui.ModNone, c.selectPrevChan); err != nil {
+	if err := g.SetKeybinding("input", gocui.KeyCtrlK, gocui.ModNone, c.selectPrevChan); err != nil {
 		return err
 	}
 
@@ -265,6 +287,7 @@ type storage struct {
 	users            []config.User
 	messages         map[string]art.Tree
 	channelFilter    string
+	channelIndex     int
 	filteredChannels channelSlice
 }
 
@@ -286,9 +309,12 @@ func findInSlice(slice []interface{}, itemToFind interface{}) int {
 
 func (c *comms) channelSelector(g *gocui.Gui, v *gocui.View) error {
 	c.storage.channelFilter = ""
+	c.storage.channelIndex = 0
 	c.storage.filteredChannels = c.storage.channels
 	_, err := g.SetCurrentView("chan_selector")
 	g.SetViewOnTop("chan_selector")
+	chanelSelectorV, _ := g.View("chan_selector")
+	c.redrawChannelSelector(chanelSelectorV, 0)
 	return err
 }
 
@@ -372,9 +398,10 @@ func formatTime(t time.Time) string {
 }
 
 func (c *comms) redraw(g *gocui.Gui) error {
-	vActiveChannel, err := g.View("active_channel")
-	vActiveChannel.Clear()
-	fmt.Fprintln(vActiveChannel, redColor(c.storage.activeChannel.Name))
+	if vActiveChannel, err := g.View("active_channel"); err == nil {
+		vActiveChannel.Clear()
+		fmt.Fprintln(vActiveChannel, redColor(c.storage.activeChannel.Name))
+	}
 
 	vMsg, err := g.View("msgs")
 	if err != nil {
@@ -392,12 +419,13 @@ func (c *comms) redraw(g *gocui.Gui) error {
 			value := node.Value()
 			msg, _ := value.(config.Message)
 			userName := c.getUser(msg.Account, msg.Username).Name
+			indentedText := text.Indent(sanitize.HTML(msg.Text), "")
 			fmt.Fprintf(
 				vMsg,
 				"%s %s: %s\n",
 				grayColor(formatTime(msg.Timestamp)),
-				colorize(userName),
-				whiteColor(sanitize.HTML(msg.Text)),
+				colorize(fmt.Sprintf("%12.12s", userName)),
+				whiteColor(indentedText),
 			)
 		}
 		mut.Unlock()
@@ -418,6 +446,7 @@ func (c *comms) websocketConnect(g *gocui.Gui) {
 	conn, _, err := dialer.Dial(URL, nil)
 	if err != nil {
 		fmt.Println(err)
+		g.Close()
 		return
 	}
 
