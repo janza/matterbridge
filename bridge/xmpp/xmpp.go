@@ -179,6 +179,14 @@ func (b *Bxmpp) getUsernameFromJid(jid string) string {
 	return node
 }
 
+func (b *Bxmpp) getIDFromJid(jid string) string {
+	node, server, _ := b.parseJid(jid)
+	if server == b.Config.Muc {
+		return jid
+	}
+	return node + "@" + server
+}
+
 func (b *Bxmpp) getChannel(v xmpp.Chat) string {
 	node, domain, _ := b.parseJid(v.Remote)
 	return node + "@" + domain
@@ -236,9 +244,10 @@ func (b *Bxmpp) handleXMPP() error {
 				continue
 			}
 			nick := b.getUsernameFromJid(v.From)
+			ID := b.getIDFromJid(v.MucJid)
 			flog.Warnf("Adding to know users %s: %s", nick, v.MucJid)
 			b.KnownUsers[nick] = v.MucJid
-			b.Users <- config.NewUser(v.MucJid, b.Account, nick)
+			b.Users <- config.NewUser(ID, b.Account, nick)
 		}
 	}
 }
