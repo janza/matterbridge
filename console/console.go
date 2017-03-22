@@ -65,11 +65,8 @@ func main() {
 
 	connection := NewConnection(done, storage.NewMessage, storage.NewUser, storage.NewChannel)
 
-	messages := NewMessagesWidget("messages", 0, 0, storage)
-	channels := NewChannelsWidget("channels", 0, 0, storage, connection)
-	g.SetManager(messages, channels)
-
-	if err := keybindings(g); err != nil {
+	window := NewWindow(g, storage, connection)
+	if err := window.manage(); err != nil {
 		panic(err)
 	}
 
@@ -85,14 +82,58 @@ func main() {
 	}
 }
 
-func keybindings(g *gocui.Gui) error {
-	if err := g.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, quit); err != nil {
+type Window struct {
+	messages *MessagesWidget
+	channels *ChannelsWidget
+	input    *InputWidget
+
+	storage    *Storage
+	connection *Conn
+
+	gui *gocui.Gui
+}
+
+func NewWindow(gui *gocui.Gui, storage *Storage, connection *Conn) *Window {
+	return &Window{
+		messages:   NewMessagesWidget("messages", storage),
+		channels:   NewChannelsWidget("channels", storage),
+		input:      NewInputWidget("input"),
+		storage:    storage,
+		connection: connection,
+		gui:        gui,
+	}
+}
+
+func (w *Window) manage() error {
+	w.gui.SetManager(w.messages, w.input, w.channels)
+
+	if err := w.gui.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, w.quit); err != nil {
+		return err
+	}
+	if err := w.gui.SetKeybinding("", gocui.KeyCtrlK, gocui.ModNone, w.openChannelPicker); err != nil {
 		return err
 	}
 	return nil
 }
 
-func quit(g *gocui.Gui, v *gocui.View) error {
+func (w *Window) openChannelPicker(g *gocui.Gui, v *gocui.View) error {
+	w.messages.active = false
+	w.input.active = false
+	w.channels.active = true
+	w.channels.addCallback(func(isCanceled bool, channel config.Channel) {
+		w.messages.active = true
+		w.input.active = true
+		w.channels.active = false
+		w.storage.SetActiveChannel(channel)
+		w.connection.fetchMessages(
+			w.storage.activeChannel,
+			w.storage.getLastMessageTimestamp(),
+		)
+	})
+	return nil
+}
+
+func (w *Window) quit(g *gocui.Gui, v *gocui.View) error {
 	close(done)
 	return gocui.ErrQuit
 }
@@ -130,10 +171,42 @@ func (c *channelSorter) Less(i, j int) bool {
 	return c.channelSlice[i].ID < c.channelSlice[j].ID
 }
 
+type InputWidget struct {
+	name   string
+	active bool
+}
+
+func NewInputWidget(name string) *InputWidget {
+	return &InputWidget{
+		name:   name,
+		active: true,
+	}
+}
+
+func (w *InputWidget) Layout(g *gocui.Gui) error {
+	maxX, maxY := g.Size()
+	v, err := g.SetView(w.name, -1, maxY-2, maxX, maxY)
+	if err != nil {
+		if err != gocui.ErrUnknownView {
+			return err
+		}
+		v.Autoscroll = true
+		v.Wrap = true
+		v.Frame = true
+		v.Editable = w.active
+	}
+	v.Editable = w.active
+	if w.active {
+		g.SetCurrentView(w.name)
+		g.SetViewOnTop(w.name)
+	}
+
+	return nil
+}
+
 type MessagesWidget struct {
-	name string
-	x, y int
-	w    int
+	name   string
+	active bool
 
 	storage       *Storage
 	activeChannel config.Channel
@@ -141,22 +214,28 @@ type MessagesWidget struct {
 	messages      map[string]art.Tree
 }
 
-func NewMessagesWidget(name string, x, y int, s *Storage) *MessagesWidget {
+func NewMessagesWidget(name string, s *Storage) *MessagesWidget {
 	return &MessagesWidget{
 		name:    name,
-		x:       x,
-		y:       y,
+		active:  true,
 		storage: s,
 	}
 }
 
 func (w *MessagesWidget) Layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
-	v, err := g.SetView(w.name, 0, maxY/2, maxX, maxY)
+	v, err := g.SetView(w.name, -1, -1, maxX, maxY-1)
 	if err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
+		v.Autoscroll = true
+		v.Wrap = true
+		v.Frame = false
+	}
+	if w.active {
+		g.SetCurrentView(w.name)
+		g.SetViewOnTop(w.name)
 	}
 	v.Clear()
 	fmt.Fprint(v, "These are the messages:\n")
@@ -175,24 +254,24 @@ func (w *MessagesWidget) Layout(g *gocui.Gui) error {
 }
 
 type ChannelsWidget struct {
-	name string
-	x, y int
-	w    int
+	name   string
+	active bool
 
 	storage          *Storage
-	conn             *Conn
 	channelFilter    string
 	channelSelection int
+	channelSelected  func(isCanceled bool, c config.Channel)
 }
 
-func NewChannelsWidget(name string, x, y int, s *Storage, c *Conn) *ChannelsWidget {
+func NewChannelsWidget(name string, s *Storage) *ChannelsWidget {
 	return &ChannelsWidget{
 		name:    name,
-		x:       x,
-		y:       y,
 		storage: s,
-		conn:    c,
 	}
+}
+
+func (w *ChannelsWidget) addCallback(cb func(isCanceled bool, c config.Channel)) {
+	w.channelSelected = cb
 }
 
 func filterChannels(channels channelSlice, f func(config.Channel) bool) channelSlice {
@@ -217,7 +296,7 @@ func (w *ChannelsWidget) filteredChannels() channelSlice {
 // Layout handles console display layouting
 func (w *ChannelsWidget) Layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
-	v, err := g.SetView(w.name, 0, 0, maxX, maxY/2)
+	v, err := g.SetView(w.name, -1, -1, maxX, maxY)
 	if err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
@@ -225,9 +304,17 @@ func (w *ChannelsWidget) Layout(g *gocui.Gui) error {
 		if _, err := g.SetCurrentView(w.name); err != nil {
 			return err
 		}
+		v.Frame = false
 		v.Editable = true
 		v.Editor = gocui.EditorFunc(w.Editor)
 	}
+
+	if !w.active {
+		return nil
+	}
+
+	g.SetCurrentView(w.name)
+	g.SetViewOnTop(w.name)
 
 	v.Clear()
 	format := "%s\n"
@@ -270,13 +357,10 @@ func (w *ChannelsWidget) Editor(v *gocui.View, key gocui.Key, ch rune, mod gocui
 		nChannels := len(channels)
 		if nChannels > 0 {
 			w.channelSelection = (w.channelSelection + nChannels) % nChannels
-			w.storage.SetActiveChannel(channels[w.channelSelection])
-			w.conn.fetchMessages(
-				w.storage.activeChannel,
-				w.storage.getLastMessageTimestamp(),
-			)
+			w.channelSelected(false, channels[w.channelSelection])
+		} else {
+			w.channelSelected(true, config.Channel{})
 		}
-
 		w.channelFilter = ""
 		return
 	}
@@ -286,16 +370,6 @@ func (w *ChannelsWidget) Editor(v *gocui.View, key gocui.Key, ch rune, mod gocui
 	if nChannels > 0 {
 		w.channelSelection = (w.channelSelection + nChannels) % nChannels
 	}
-}
-
-func (w *ChannelsWidget) setActiveChannel(g *gocui.Gui, v *gocui.View) error {
-	channels := w.filteredChannels()
-	nChannels := len(channels)
-	w.channelSelection = (w.channelSelection + nChannels) % nChannels
-	if nChannels > 0 {
-		w.storage.SetActiveChannel(channels[w.channelSelection])
-	}
-	return nil
 }
 
 func colorize(s string) string {
