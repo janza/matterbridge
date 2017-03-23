@@ -94,13 +94,24 @@ type Window struct {
 }
 
 func NewWindow(gui *gocui.Gui, storage *Storage, connection *Conn) *Window {
-	return &Window{
-		messages:   NewMessagesWidget("messages", storage),
-		channels:   NewChannelsWidget("channels", storage),
-		input:      NewInputWidget("input"),
+	w := &Window{
+		messages:   newMessagesWidget("messages", storage),
+		channels:   newChannelsWidget("channels", storage),
 		storage:    storage,
 		connection: connection,
 		gui:        gui,
+	}
+
+	w.input = newInputWidget("input", w.sendMessage)
+	return w
+}
+
+func (w *Window) sendMessage(text string) {
+	activeChannel := w.storage.activeChannel
+	w.connection.messages <- config.Message{
+		Text:    strings.TrimSpace(text),
+		Channel: activeChannel.Channel,
+		To:      activeChannel.Account,
 	}
 }
 
@@ -172,14 +183,17 @@ func (c *channelSorter) Less(i, j int) bool {
 }
 
 type InputWidget struct {
-	name   string
-	active bool
+	name        string
+	active      bool
+	storage     *Storage
+	sendMessage func(text string)
 }
 
-func NewInputWidget(name string) *InputWidget {
+func newInputWidget(name string, sendMessage func(text string)) *InputWidget {
 	return &InputWidget{
-		name:   name,
-		active: true,
+		name:        name,
+		active:      true,
+		sendMessage: sendMessage,
 	}
 }
 
@@ -193,7 +207,7 @@ func (w *InputWidget) Layout(g *gocui.Gui) error {
 		v.Autoscroll = true
 		v.Wrap = true
 		v.Frame = true
-		v.Editable = w.active
+		v.Editor = gocui.EditorFunc(w.editor)
 	}
 	v.Editable = w.active
 	if w.active {
@@ -202,6 +216,32 @@ func (w *InputWidget) Layout(g *gocui.Gui) error {
 	}
 
 	return nil
+}
+
+func (w *InputWidget) editor(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
+	switch {
+	case ch != 0 && mod == 0:
+		v.EditWrite(ch)
+	case key == gocui.KeySpace:
+		v.EditWrite(' ')
+	case key == gocui.KeyBackspace || key == gocui.KeyBackspace2:
+		v.EditDelete(true)
+	case key == gocui.KeyDelete:
+		v.EditDelete(false)
+	case key == gocui.KeyInsert:
+		v.Overwrite = !v.Overwrite
+	case key == gocui.KeyEnter:
+		w.sendMessage(v.Buffer())
+		v.Clear()
+	case key == gocui.KeyArrowDown:
+		v.MoveCursor(0, 1, false)
+	case key == gocui.KeyArrowUp:
+		v.MoveCursor(0, -1, false)
+	case key == gocui.KeyArrowLeft:
+		v.MoveCursor(-1, 0, false)
+	case key == gocui.KeyArrowRight:
+		v.MoveCursor(1, 0, false)
+	}
 }
 
 type MessagesWidget struct {
@@ -214,7 +254,7 @@ type MessagesWidget struct {
 	messages      map[string]art.Tree
 }
 
-func NewMessagesWidget(name string, s *Storage) *MessagesWidget {
+func newMessagesWidget(name string, s *Storage) *MessagesWidget {
 	return &MessagesWidget{
 		name:    name,
 		active:  true,
@@ -263,7 +303,7 @@ type ChannelsWidget struct {
 	channelSelected  func(isCanceled bool, c config.Channel)
 }
 
-func NewChannelsWidget(name string, s *Storage) *ChannelsWidget {
+func newChannelsWidget(name string, s *Storage) *ChannelsWidget {
 	return &ChannelsWidget{
 		name:    name,
 		storage: s,
@@ -306,7 +346,7 @@ func (w *ChannelsWidget) Layout(g *gocui.Gui) error {
 		}
 		v.Frame = false
 		v.Editable = true
-		v.Editor = gocui.EditorFunc(w.Editor)
+		v.Editor = gocui.EditorFunc(w.editor)
 	}
 
 	if !w.active {
@@ -338,7 +378,7 @@ func (w *ChannelsWidget) Layout(g *gocui.Gui) error {
 	return nil
 }
 
-func (w *ChannelsWidget) Editor(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
+func (w *ChannelsWidget) editor(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
 	switch {
 	case ch != 0 && mod == 0:
 		w.channelFilter += string(ch)

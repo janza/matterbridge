@@ -111,8 +111,6 @@ func (c *Conn) wsWriter(conn *websocket.Conn) {
 	for {
 		select {
 		case message := <-c.messages:
-			fmt.Printf("Message: %#v", message)
-
 			jsonMessage, _ := json.Marshal(bweb.InboundWireMessage{
 				Type:    "message",
 				Message: message,
