@@ -2,6 +2,7 @@ package bweb
 
 import (
 	"encoding/json"
+	"errors"
 	log "github.com/Sirupsen/logrus"
 	"net/http"
 	"time"
@@ -186,6 +187,73 @@ type Client struct {
 	send chan []byte
 }
 
+func (c *Client) processMessage(jsonMsg []byte) (interface{}, error) {
+	var msg json.RawMessage
+	inbound := InboundWireMessage{Message: &msg}
+	err := json.Unmarshal(jsonMsg, &inbound)
+	if err != nil {
+		return nil, err
+	}
+	if len(msg) == 0 {
+		return nil, errors.New("missing Message field")
+	}
+	switch inbound.Type {
+	case "message":
+		var incomingMessage config.Message
+		if err := json.Unmarshal(msg, &incomingMessage); err != nil {
+			return nil, err
+		}
+		incomingMessage.Account = c.account
+		incomingMessage.Username = "" // Empty for now
+		return incomingMessage, nil
+	case "command":
+		var specificCommand json.RawMessage
+		cmd := config.Command{
+			Command: &specificCommand,
+		}
+		if err := json.Unmarshal(msg, &cmd); err != nil {
+			return nil, err
+		}
+		switch cmd.Type {
+		case "replay_messages":
+			var command config.GetMessagesCommand
+			if err := json.Unmarshal(specificCommand, &command); err != nil {
+				return nil, err
+			}
+			cmd.Command = command
+		case "get_channels":
+			var command config.GetChannelsCommand
+			if err := json.Unmarshal(specificCommand, &command); err != nil {
+				return nil, err
+			}
+			cmd.Command = command
+		case "get_users":
+			var command config.GetUsersCommand
+			if err := json.Unmarshal(specificCommand, &command); err != nil {
+				return nil, err
+			}
+			cmd.Command = command
+		case "get_last_read_message":
+			var command config.GetLastReadMessage
+			if err := json.Unmarshal(specificCommand, &command); err != nil {
+				return nil, err
+			}
+			cmd.Command = command
+		case "mark_message_as_read":
+			var command config.MarkMessageAsRead
+			if err := json.Unmarshal(specificCommand, &command); err != nil {
+				return nil, err
+			}
+			cmd.Command = command
+		default:
+			return nil, errors.New("unknown command received")
+		}
+		return cmd, nil
+	default:
+		return nil, errors.New("unknown message received")
+	}
+}
+
 func (c *Client) readPump() {
 	defer func() {
 		c.hub.unregister <- c
@@ -205,59 +273,17 @@ func (c *Client) readPump() {
 			}
 			break
 		}
-		var msg json.RawMessage
-		inbound := InboundWireMessage{Message: &msg}
-		err = json.Unmarshal(jsonMsg, &inbound)
+
+		processedMessage, err := c.processMessage(jsonMsg)
 		if err != nil {
-			log.Printf("unable to parse json: %s", jsonMsg)
+			log.Printf("unable to process message: %s", err)
 			continue
 		}
-		switch inbound.Type {
-		case "message":
-			var incomingMessage config.Message
-			if err := json.Unmarshal(msg, &incomingMessage); err != nil {
-				log.Fatal(err)
-				continue
-			}
-			incomingMessage.Account = c.account
-			incomingMessage.Username = "" // Empty for now
-			c.remoteMessages <- incomingMessage
-		case "command":
-			var specificCommand json.RawMessage
-			cmd := config.Command{
-				Command: &specificCommand,
-			}
-			if err := json.Unmarshal(msg, &cmd); err != nil {
-				log.Fatal(err)
-				continue
-			}
-			switch cmd.Type {
-			case "replay_messages":
-				var command config.GetMessagesCommand
-				err := json.Unmarshal(specificCommand, &command)
-				if err != nil {
-					log.Fatal(err)
-					continue
-				}
-				cmd.Command = command
-			case "get_channels":
-				var command config.GetChannelsCommand
-				err := json.Unmarshal(specificCommand, &command)
-				if err != nil {
-					log.Fatal(err)
-					continue
-				}
-				cmd.Command = command
-			case "get_users":
-				var command config.GetUsersCommand
-				err := json.Unmarshal(specificCommand, &command)
-				if err != nil {
-					log.Fatal(err)
-					continue
-				}
-				cmd.Command = command
-			}
-			c.remoteCommands <- cmd
+		switch message := processedMessage.(type) {
+		case config.Command:
+			c.remoteCommands <- message
+		case config.Message:
+			c.remoteMessages <- message
 		}
 	}
 }
