@@ -32,6 +32,7 @@ func New(cfg *config.Config, gateway *config.WebGateway) error {
 	c.Channels = make(chan config.Channel, 10)
 	c.MessageLog = make(chan config.Message, 10)
 	c.Commands = make(chan config.Command, 10)
+	c.ReadStatus = make(chan config.Message, 10)
 	gw := &WebGateway{}
 	gw.Bridges = make(map[string]*bridge.Bridge)
 	gw.Config = cfg
@@ -89,6 +90,9 @@ func (gw *WebGateway) handleReceive(c config.Comms) {
 		case msg := <-c.MessageLog:
 			flog.Debugf("Got message from log %#v", msg)
 			gw.handleLog(msg)
+		case msg := <-c.ReadStatus:
+			flog.Debugf("Got read status update %#v", msg)
+			gw.handleReadStatus(msg)
 		}
 	}
 }
@@ -109,6 +113,10 @@ func (gw *WebGateway) handleChannel(channel config.Channel) {
 
 func (gw *WebGateway) handleCommand(cmd config.Command) {
 	gw.DiskBridge.HandleCommand(cmd.Command)
+}
+
+func (gw *WebGateway) handleReadStatus(msg config.Message) {
+	gw.WebBridge.ReadStatusUpdate(msg)
 }
 
 func (gw *WebGateway) handleLog(msg config.Message) {
