@@ -17,6 +17,7 @@ type Bweb struct {
 	Messages    chan config.Message
 	Users       chan config.User
 	Channels    chan config.Channel
+	ReadStatus  chan config.Message
 	Remote      chan config.Message
 	Hub         *Hub
 	Commands    chan config.Command
@@ -68,6 +69,7 @@ func New(cfg config.Protocol, account string, c config.Comms) *Bweb {
 	b.Messages = make(chan config.Message)
 	b.Users = make(chan config.User)
 	b.Channels = make(chan config.Channel)
+	b.ReadStatus = make(chan config.Message)
 
 	b.Account = account
 	b.Remote = c.Messages
@@ -102,6 +104,13 @@ func (b *Bweb) Presence(user config.User) error {
 func (b *Bweb) Discovery(channel config.Channel) error {
 	go func() {
 		b.Channels <- channel
+	}()
+	return nil
+}
+
+func (b *Bweb) ReadStatusUpdate(msg config.Message) error {
+	go func() {
+		b.ReadStatus <- msg
 	}()
 	return nil
 }
@@ -150,6 +159,15 @@ func (b *Bweb) Run() {
 			json, err := json.Marshal(WireMessage{
 				Type:    "channel",
 				Channel: msg,
+			})
+			if err != nil {
+				panic(err)
+			}
+			b.Hub.broadcast <- json
+		case msg := <-b.ReadStatus:
+			json, err := json.Marshal(WireMessage{
+				Type:    "read_status",
+				Message: msg,
 			})
 			if err != nil {
 				panic(err)
@@ -235,6 +253,12 @@ func (c *Client) processMessage(jsonMsg []byte) (interface{}, error) {
 			cmd.Command = command
 		case "get_last_read_message":
 			var command config.GetLastReadMessage
+			if err := json.Unmarshal(specificCommand, &command); err != nil {
+				return nil, err
+			}
+			cmd.Command = command
+		case "get_last_read_messages":
+			var command config.GetLastReadMessages
 			if err := json.Unmarshal(specificCommand, &command); err != nil {
 				return nil, err
 			}

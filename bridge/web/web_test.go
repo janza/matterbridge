@@ -77,6 +77,25 @@ func TestProcessIncomingGetLastReadMessageCommand(t *testing.T) {
 	)
 }
 
+func TestProcessIncomingGetLastReadMessagesCommand(t *testing.T) {
+	message, err := processString(`{
+		"Type": "command",
+		"Message": {
+			"Type": "get_last_read_messages",
+			"Command": {}
+		}
+	}`)
+	assert.Nil(t, err)
+	assert.Equal(
+		t,
+		config.Command{
+			Type:    "get_last_read_messages",
+			Command: config.GetLastReadMessages{},
+		},
+		message,
+	)
+}
+
 func TestProcessIncomingMarkMessageAsReadCommand(t *testing.T) {
 	message, err := processString(`{
 		"Type": "command",

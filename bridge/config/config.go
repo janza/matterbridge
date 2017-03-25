@@ -67,6 +67,9 @@ type GetChannelsCommand struct {
 type GetUsersCommand struct {
 }
 
+type GetLastReadMessages struct {
+}
+
 type GetMessagesCommand struct {
 	Channel string
 	Offset  time.Time
@@ -86,7 +89,7 @@ type Comms struct {
 	Users      chan User
 	Channels   chan Channel
 	Commands   chan Command
-	ReadStatus chan string
+	ReadStatus chan Message
 }
 
 type Protocol struct {

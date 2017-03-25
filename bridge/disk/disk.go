@@ -22,6 +22,7 @@ type Bdisk struct {
 type ChannelMap map[string]config.Channel
 type UserMap map[string]config.User
 type KeyValStore map[string]interface{}
+type ReadStatusMap map[string]config.Message
 
 var (
 	flog *log.Entry
@@ -167,6 +168,10 @@ func (b *Bdisk) Send(msg config.Message) error {
 	return b.AppendToFile(channelID+"_log.json", msg)
 }
 
+func (b *Bdisk) MarkRead(msg config.Message) error {
+	return b.StoreKeyValue("read_status.json", msg.Channel+":"+msg.Account, msg)
+}
+
 func (b *Bdisk) Presence(user config.User) error {
 	return b.StoreKeyValue("users.json", user.ID, user)
 }
@@ -188,6 +193,20 @@ func (b *Bdisk) ReplayMessages(channel string, numberOfMessages int, offset time
 	}
 }
 
+func (b *Bdisk) GetLastReadMessage(channel string) {
+	var readStatusMap ReadStatusMap
+	b.ReadKeyValue("read_status.json", &readStatusMap)
+	b.Comms.ReadStatus <- readStatusMap[channel]
+}
+
+func (b *Bdisk) GetLastReadMessages() {
+	var readStatusMap ReadStatusMap
+	b.ReadKeyValue("read_status.json", &readStatusMap)
+	for _, readMessage := range readStatusMap {
+		b.Comms.ReadStatus <- readMessage
+	}
+}
+
 func (b *Bdisk) HandleCommand(command interface{}) error {
 	switch cmd := command.(type) {
 	case config.GetMessagesCommand:
@@ -196,6 +215,12 @@ func (b *Bdisk) HandleCommand(command interface{}) error {
 		go b.ReplayUsers()
 	case config.GetChannelsCommand:
 		go b.ReplayChannels()
+	case config.MarkMessageAsRead:
+		go b.MarkRead(cmd.Message)
+	case config.GetLastReadMessage:
+		go b.GetLastReadMessage(cmd.Channel)
+	case config.GetLastReadMessages:
+		go b.GetLastReadMessages()
 	default:
 		log.Warn("Unkown command received %#v", command)
 	}
