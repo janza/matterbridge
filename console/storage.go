@@ -37,7 +37,7 @@ func NewStorage(redraw func()) *Storage {
 	return storage
 }
 
-func (s *Storage) NewMessage(m config.Message) {
+func (s *Storage) NewMessage(m config.Message) bool {
 	bucket := m.Channel + ":" + m.Account
 	if _, ok := s.messages[bucket]; !ok {
 		s.messages[bucket] = art.New()
@@ -49,6 +49,7 @@ func (s *Storage) NewMessage(m config.Message) {
 		s.unreadMessages[bucket]++
 	}
 	s.redraw()
+	return m.Channel == s.activeChannel.Channel && m.Account == s.activeChannel.Account
 }
 
 func (s *Storage) NewChannel(c config.Channel) {

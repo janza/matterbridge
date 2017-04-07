@@ -31,8 +31,9 @@ func TestHandleWebsocketMessageChannel(t *testing.T) {
 func TestHandleWebsocketMessageMessage(t *testing.T) {
 	c := &Conn{}
 	handlerCalled := false
-	c.newMessage = func(config.Message) {
+	c.newMessage = func(config.Message) bool {
 		handlerCalled = true
+		return true
 	}
 	c.handleWebsocketMessage([]byte(`{"Type": "message", "Message": {}}`))
 	assert.Equal(t, true, handlerCalled)

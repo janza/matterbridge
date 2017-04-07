@@ -14,7 +14,7 @@ var (
 	url = "ws://localhost:8001/ws"
 )
 
-type msgHandler func(config.Message)
+type msgHandler func(config.Message) bool
 type userHandler func(config.User)
 type channelHandler func(config.Channel)
 type readMessageHandler func(config.Message)
@@ -125,7 +125,9 @@ func (c *Conn) handleWebsocketMessage(message []byte) {
 	}
 
 	if msg.Type == "message" {
-		c.newMessage(msg.Message)
+		if c.newMessage(msg.Message) {
+			c.MarkAsRead(msg.Message)
+		}
 	}
 
 	if msg.Type == "read_status" {
