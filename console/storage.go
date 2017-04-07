@@ -12,10 +12,13 @@ var (
 	mut = &sync.Mutex{}
 )
 
+type readMessagesInChannel map[string]config.Message
+
 // Storage handles storing stuff
 type Storage struct {
 	messages       map[string]art.Tree
 	unreadMessages map[string]int
+	readMessages   readMessagesInChannel
 	activeChannel  config.Channel
 	channels       channelSlice
 	users          []config.User
@@ -26,6 +29,7 @@ func NewStorage(redraw func()) *Storage {
 	storage := &Storage{}
 	storage.messages = make(map[string]art.Tree)
 	storage.unreadMessages = make(map[string]int)
+	storage.readMessages = make(readMessagesInChannel)
 	storage.activeChannel = config.Channel{}
 	storage.channels = make(channelSlice, 0)
 	storage.users = make([]config.User, 0)
@@ -58,6 +62,10 @@ func (s *Storage) NewUser(u config.User) {
 	s.redraw()
 }
 
+func (s *Storage) MarkAsRead(msg config.Message) {
+	s.readMessages[msg.Channel+":"+msg.Account] = msg
+}
+
 func (s *Storage) SetActiveChannel(channel config.Channel) {
 	s.activeChannel = channel
 	s.unreadMessages[s.activeChannel.ID] = 0
@@ -84,6 +92,14 @@ func (s *Storage) getLastMessageTimestamp() time.Time {
 		}
 	}
 	return time.Time{}
+}
+
+func (s *Storage) LastMessageInChannel(channel config.Channel) config.Message {
+	lastMsg := config.Message{}
+	s.IterateOverChannelMsgs(func(msg config.Message, _ string) {
+		lastMsg = msg
+	})
+	return lastMsg
 }
 
 func (s *Storage) IterateOverChannelMsgs(cb func(msg config.Message, userName string)) {

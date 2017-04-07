@@ -63,7 +63,13 @@ func main() {
 		})
 	})
 
-	connection := NewConnection(done, storage.NewMessage, storage.NewUser, storage.NewChannel)
+	connection := NewConnection(
+		done,
+		storage.NewMessage,
+		storage.NewUser,
+		storage.NewChannel,
+		storage.MarkAsRead,
+	)
 
 	window := NewWindow(g, storage, connection)
 	if err := window.manage(); err != nil {
@@ -127,6 +133,15 @@ func (w *Window) manage() error {
 	return nil
 }
 
+func (w *Window) SetActiveChannel(channel config.Channel) {
+	w.storage.SetActiveChannel(channel)
+	w.connection.fetchMessages(
+		w.storage.activeChannel,
+		w.storage.getLastMessageTimestamp(),
+	)
+	w.connection.MarkAsRead(w.storage.LastMessageInChannel(channel))
+}
+
 func (w *Window) openChannelPicker(g *gocui.Gui, v *gocui.View) error {
 	w.messages.active = false
 	w.input.active = false
@@ -135,11 +150,9 @@ func (w *Window) openChannelPicker(g *gocui.Gui, v *gocui.View) error {
 		w.messages.active = true
 		w.input.active = true
 		w.channels.active = false
-		w.storage.SetActiveChannel(channel)
-		w.connection.fetchMessages(
-			w.storage.activeChannel,
-			w.storage.getLastMessageTimestamp(),
-		)
+		if !isCanceled {
+			w.SetActiveChannel(channel)
+		}
 	})
 	return nil
 }
