@@ -46,7 +46,7 @@ func (s *Storage) NewMessage(m config.Message) bool {
 	s.messages[bucket].Insert(art.Key(m.GetKey()), m)
 	mut.Unlock()
 	if s.activeChannel.ID != bucket {
-		s.unreadMessages[bucket]++
+		s.unreadMessages[bucket] = s.CountUnreadMessages(bucket)
 	}
 	s.redraw()
 	return m.Channel == s.activeChannel.Channel && m.Account == s.activeChannel.Account
@@ -64,12 +64,13 @@ func (s *Storage) NewUser(u config.User) {
 }
 
 func (s *Storage) MarkAsRead(msg config.Message) {
-	s.readMessages[msg.Channel+":"+msg.Account] = msg
+	channelID := msg.Channel + ":" + msg.Account
+	s.readMessages[channelID] = msg
+	s.unreadMessages[channelID] = s.CountUnreadMessages(channelID)
 }
 
 func (s *Storage) SetActiveChannel(channel config.Channel) {
 	s.activeChannel = channel
-	s.unreadMessages[s.activeChannel.ID] = 0
 }
 
 func (s *Storage) GetUser(account, userID string) config.User {
@@ -95,18 +96,32 @@ func (s *Storage) getLastMessageTimestamp() time.Time {
 	return time.Time{}
 }
 
-func (s *Storage) LastMessageInChannel(channel config.Channel) config.Message {
+func (s *Storage) LastMessageInChannel(channelID string) config.Message {
 	lastMsg := config.Message{}
-	s.IterateOverChannelMsgs(func(msg config.Message, _ string) {
+	s.IterateOverChannelMsgs(channelID, func(msg config.Message, _ string) {
 		lastMsg = msg
 	})
 	return lastMsg
 }
 
-func (s *Storage) IterateOverChannelMsgs(cb func(msg config.Message, userName string)) {
+func (s *Storage) CountUnreadMessages(channelID string) int {
+	unread := 0
+	lastReadTime := s.readMessages[channelID].Timestamp
+	s.IterateOverChannelMsgs(channelID, func(msg config.Message, _ string) {
+		if msg.Timestamp.After(lastReadTime) {
+			unread++
+		}
+	})
+	return unread
+}
+
+func (s *Storage) IterateOverChannelMsgs(
+	channelID string,
+	cb func(msg config.Message, userName string),
+) {
 	mut.Lock()
 	defer mut.Unlock()
-	if activeChannelMsgs, ok := s.messages[s.activeChannel.ID]; ok {
+	if activeChannelMsgs, ok := s.messages[channelID]; ok {
 		for it := activeChannelMsgs.Iterator(); it.HasNext(); {
 			node, err := it.Next()
 			if err != nil || node.Kind() != art.Leaf {

@@ -139,7 +139,7 @@ func (w *Window) SetActiveChannel(channel config.Channel) {
 		w.storage.activeChannel,
 		w.storage.getLastMessageTimestamp(),
 	)
-	w.connection.MarkAsRead(w.storage.LastMessageInChannel(channel))
+	w.connection.MarkAsRead(w.storage.LastMessageInChannel(channel.ID))
 }
 
 func (w *Window) openChannelPicker(g *gocui.Gui, v *gocui.View) error {
@@ -293,16 +293,19 @@ func (w *MessagesWidget) Layout(g *gocui.Gui) error {
 	v.Clear()
 	fmt.Fprint(v, "These are the messages:\n")
 
-	w.storage.IterateOverChannelMsgs(func(msg config.Message, userName string) {
-		indentedText := text.Indent(sanitize.HTML(msg.Text), "")
-		fmt.Fprintf(
-			v,
-			"%s %s: %s\n",
-			grayColor(formatTime(msg.Timestamp)),
-			colorize(fmt.Sprintf("%12.12s", userName)),
-			whiteColor(indentedText),
-		)
-	})
+	w.storage.IterateOverChannelMsgs(
+		w.storage.activeChannel.ID,
+		func(msg config.Message, userName string) {
+			indentedText := text.Indent(sanitize.HTML(msg.Text), "")
+			fmt.Fprintf(
+				v,
+				"%s %s: %s\n",
+				grayColor(formatTime(msg.Timestamp)),
+				colorize(fmt.Sprintf("%12.12s", userName)),
+				whiteColor(indentedText),
+			)
+		},
+	)
 	return nil
 }
 
