@@ -2,15 +2,12 @@ package main
 
 import (
 	"fmt"
-	// "log"
-	// "math/rand"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/42wim/matterbridge/bridge/config"
-	// "github.com/42wim/matterbridge/console"
 	"github.com/fatih/color"
 	"github.com/jroimartin/gocui"
 	"github.com/kennygrant/sanitize"
