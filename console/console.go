@@ -74,10 +74,9 @@ func main() {
 	}
 
 	go func() {
-		connection.WebsocketConnect()
-		defer func() {
-			g.Close()
-		}()
+		err := connection.WebsocketConnect()
+		fmt.Println(err)
+		g.Close()
 	}()
 
 	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
@@ -86,9 +85,10 @@ func main() {
 }
 
 type Window struct {
-	messages *MessagesWidget
-	channels *ChannelsWidget
-	input    *InputWidget
+	messagesWidget  *MessagesWidget
+	channelsWidget  *ChannelsWidget
+	statusbarWidget *StatusBarWidget
+	inputWidget     *InputWidget
 
 	storage    *Storage
 	connection *Conn
@@ -98,14 +98,15 @@ type Window struct {
 
 func NewWindow(gui *gocui.Gui, storage *Storage, connection *Conn) *Window {
 	w := &Window{
-		messages:   newMessagesWidget("messages", storage),
-		channels:   newChannelsWidget("channels", storage),
-		storage:    storage,
-		connection: connection,
-		gui:        gui,
+		messagesWidget:  newMessagesWidget("messages", storage),
+		channelsWidget:  newChannelsWidget("channels", storage),
+		statusbarWidget: newStatusBarWidget("statusbar", storage),
+		storage:         storage,
+		connection:      connection,
+		gui:             gui,
 	}
 
-	w.input = newInputWidget("input", w.sendMessage)
+	w.inputWidget = newInputWidget("input", w.sendMessage)
 	return w
 }
 
@@ -119,7 +120,7 @@ func (w *Window) sendMessage(text string) {
 }
 
 func (w *Window) manage() error {
-	w.gui.SetManager(w.messages, w.input, w.channels)
+	w.gui.SetManager(w.statusbarWidget, w.messagesWidget, w.inputWidget, w.channelsWidget)
 
 	if err := w.gui.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, w.quit); err != nil {
 		return err
@@ -136,17 +137,18 @@ func (w *Window) SetActiveChannel(channel config.Channel) {
 		w.storage.activeChannel,
 		w.storage.getLastMessageTimestamp(),
 	)
-	w.connection.MarkAsRead(w.storage.LastMessageInChannel(channel.ID))
+	lastMessageInChannel := w.storage.LastMessageInChannel(channel.ID)
+	w.connection.MarkAsRead(lastMessageInChannel)
 }
 
 func (w *Window) openChannelPicker(g *gocui.Gui, v *gocui.View) error {
-	w.messages.active = false
-	w.input.active = false
-	w.channels.active = true
-	w.channels.addCallback(func(isCanceled bool, channel config.Channel) {
-		w.messages.active = true
-		w.input.active = true
-		w.channels.active = false
+	w.messagesWidget.active = false
+	w.inputWidget.active = false
+	w.channelsWidget.active = true
+	w.channelsWidget.addCallback(func(isCanceled bool, channel config.Channel) {
+		w.messagesWidget.active = true
+		w.inputWidget.active = true
+		w.channelsWidget.active = false
 		if !isCanceled {
 			w.SetActiveChannel(channel)
 		}
@@ -274,7 +276,7 @@ func newMessagesWidget(name string, s *Storage) *MessagesWidget {
 
 func (w *MessagesWidget) Layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
-	v, err := g.SetView(w.name, -1, -1, maxX, maxY-1)
+	v, err := g.SetView(w.name, -1, 1, maxX, maxY-1)
 	if err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
@@ -303,6 +305,45 @@ func (w *MessagesWidget) Layout(g *gocui.Gui) error {
 			)
 		},
 	)
+	return nil
+}
+
+type StatusBarWidget struct {
+	name   string
+	active bool
+
+	storage *Storage
+}
+
+func newStatusBarWidget(name string, s *Storage) *StatusBarWidget {
+	return &StatusBarWidget{
+		name:    name,
+		storage: s,
+	}
+}
+
+func (w *StatusBarWidget) Layout(g *gocui.Gui) error {
+	maxX, _ := g.Size()
+	v, err := g.SetView(w.name, -1, -1, maxX, 1)
+	if err != nil {
+		if err != gocui.ErrUnknownView {
+			return err
+		}
+		if _, err := g.SetCurrentView(w.name); err != nil {
+			return err
+		}
+		v.Frame = false
+	}
+
+	v.Clear()
+	w.storage.readLock.Lock()
+	for channel, count := range w.storage.unreadMessages {
+		if count > 0 {
+			fmt.Fprintf(v, "%s (%d)", channel, count)
+		}
+	}
+	w.storage.readLock.Unlock()
+
 	return nil
 }
 
@@ -349,7 +390,7 @@ func (w *ChannelsWidget) filteredChannels() channelSlice {
 // Layout handles console display layouting
 func (w *ChannelsWidget) Layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
-	v, err := g.SetView(w.name, -1, -1, maxX, maxY)
+	v, err := g.SetView(w.name, -1, 1, maxX, maxY)
 	if err != nil {
 		if err != gocui.ErrUnknownView {
 			return err

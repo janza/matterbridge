@@ -19,6 +19,7 @@ type Storage struct {
 	messages       map[string]art.Tree
 	unreadMessages map[string]int
 	readMessages   readMessagesInChannel
+	readLock       *sync.Mutex
 	activeChannel  config.Channel
 	channels       channelSlice
 	users          []config.User
@@ -34,19 +35,23 @@ func NewStorage(redraw func()) *Storage {
 	storage.channels = make(channelSlice, 0)
 	storage.users = make([]config.User, 0)
 	storage.redraw = redraw
+	storage.readLock = &sync.Mutex{}
 	return storage
 }
 
 func (s *Storage) NewMessage(m config.Message) bool {
-	bucket := m.Channel + ":" + m.Account
-	if _, ok := s.messages[bucket]; !ok {
-		s.messages[bucket] = art.New()
+	channelID := m.Channel + ":" + m.Account
+	if _, ok := s.messages[channelID]; !ok {
+		s.messages[channelID] = art.New()
 	}
 	mut.Lock()
-	s.messages[bucket].Insert(art.Key(m.GetKey()), m)
+	s.messages[channelID].Insert(art.Key(m.GetKey()), m)
 	mut.Unlock()
-	if s.activeChannel.ID != bucket {
-		s.unreadMessages[bucket] = s.CountUnreadMessages(bucket)
+
+	if s.activeChannel.ID != channelID {
+		s.readLock.Lock()
+		s.unreadMessages[channelID] = s.CountUnreadMessages(channelID)
+		s.readLock.Unlock()
 	}
 	s.redraw()
 	return m.Channel == s.activeChannel.Channel && m.Account == s.activeChannel.Account
@@ -66,11 +71,14 @@ func (s *Storage) NewUser(u config.User) {
 func (s *Storage) MarkAsRead(msg config.Message) {
 	channelID := msg.Channel + ":" + msg.Account
 	s.readMessages[channelID] = msg
+	s.readLock.Lock()
 	s.unreadMessages[channelID] = s.CountUnreadMessages(channelID)
+	s.readLock.Unlock()
 }
 
 func (s *Storage) SetActiveChannel(channel config.Channel) {
 	s.activeChannel = channel
+	s.MarkAsRead(s.LastMessageInChannel(channel.ID))
 }
 
 func (s *Storage) GetUser(account, userID string) config.User {

@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"log"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/42wim/matterbridge/bridge/config"
@@ -63,7 +65,6 @@ func (c *Conn) debounceCommandChannel(
 		for {
 			select {
 			case buffer, ok = <-input:
-				fmt.Println("adding to buffer")
 				if !ok {
 					return
 				}
@@ -81,17 +82,20 @@ func (c *Conn) debounceCommandChannel(
 	return input
 }
 
-func (c *Conn) WebsocketConnect() {
+func (c *Conn) WebsocketConnect() error {
 
 	var dialer *websocket.Dialer
 
 	conn, _, err := dialer.Dial(url, nil)
 	if err != nil {
-		fmt.Println(err)
-		return
+		log.Printf("Error dialing socket %s", err)
+		return err
 	}
 
-	defer conn.Close()
+	defer func() {
+		conn.Close()
+		log.Println("Closing from reader")
+	}()
 
 	go c.wsWriter(conn)
 
@@ -100,8 +104,14 @@ func (c *Conn) WebsocketConnect() {
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
-			fmt.Println("read:", err)
-			return
+			log.Printf("ReadMessage error %s %s", err.Error(), string(websocket.CloseMessageTooBig))
+			if strings.Contains(
+				err.Error(),
+				strconv.FormatInt(websocket.CloseMessageTooBig, 10),
+			) {
+				continue
+			}
+			return err
 		}
 
 		c.handleWebsocketMessage(message)
@@ -109,29 +119,29 @@ func (c *Conn) WebsocketConnect() {
 }
 
 func (c *Conn) handleWebsocketMessage(message []byte) {
-	msg := bweb.WireMessage{}
-	err := json.Unmarshal(message, &msg)
+	wireMsg := bweb.WireMessage{}
+	err := json.Unmarshal(message, &wireMsg)
 	if err != nil {
-		fmt.Println("failed to parse json:", err)
 		return
 	}
 
-	if msg.Type == "user" {
-		c.newUser(msg.User)
+	if wireMsg.Type == "user" {
+		c.newUser(wireMsg.User)
 	}
 
-	if msg.Type == "channel" {
-		c.newChannel(msg.Channel)
+	if wireMsg.Type == "channel" {
+		c.newChannel(wireMsg.Channel)
 	}
 
-	if msg.Type == "message" {
-		if c.newMessage(msg.Message) {
-			c.MarkAsRead(msg.Message)
+	if wireMsg.Type == "message" {
+		if c.newMessage(wireMsg.Message) {
+			c.MarkAsRead(wireMsg.Message)
 		}
 	}
 
-	if msg.Type == "read_status" {
-		incomingMsg := msg.Message
+	if wireMsg.Type == "read_status" {
+		log.Printf("Got socket message %s\n", wireMsg.Type)
+		incomingMsg := wireMsg.Message
 		c.commands <- config.Command{
 			Type: "replay_messages",
 			Command: config.GetMessagesCommand{
@@ -182,6 +192,7 @@ func (c *Conn) MarkAsRead(msg config.Message) {
 
 func (c *Conn) wsWriter(conn *websocket.Conn) {
 	defer func() {
+		log.Println("Closing from writer")
 		conn.Close()
 	}()
 	for {
@@ -191,6 +202,7 @@ func (c *Conn) wsWriter(conn *websocket.Conn) {
 				Type:    "message",
 				Message: message,
 			})
+			log.Printf("Sending message to socket %s\n", message.Text)
 			conn.WriteMessage(
 				websocket.TextMessage,
 				jsonMessage,
@@ -200,6 +212,7 @@ func (c *Conn) wsWriter(conn *websocket.Conn) {
 				Type:    "command",
 				Message: command,
 			})
+			log.Printf("Sending command to socket %s\n", jsonMessage)
 			conn.WriteMessage(
 				websocket.TextMessage,
 				jsonMessage,

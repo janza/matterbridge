@@ -33,3 +33,17 @@ func TestCountUnreadMessages(t *testing.T) {
 	unread := s.unreadMessages["bar:foo"]
 	assert.Equal(t, 0, unread)
 }
+
+func TestGetLastMessageInChannel(t *testing.T) {
+	s := NewStorage(func() {})
+
+	s.NewMessage(config.Message{Account: "foo", Channel: "bar", Timestamp: time.Date(2002, 1, 1, 0, 0, 0, 0, time.Local)})
+	s.NewMessage(config.Message{Account: "foo", Channel: "bar", Timestamp: time.Date(2001, 1, 1, 0, 0, 0, 0, time.Local)})
+	s.NewMessage(config.Message{Account: "foo", Channel: "bar", Timestamp: time.Date(2000, 1, 1, 0, 0, 0, 0, time.Local)})
+	s.NewMessage(config.Message{Account: "foo", Channel: "bar", Timestamp: time.Date(2000, 1, 1, 0, 0, 0, 0, time.Local)})
+
+	assert.Equal(t,
+		config.Message{Account: "foo", Channel: "bar", Timestamp: time.Date(2002, 1, 1, 0, 0, 0, 0, time.Local)},
+		s.LastMessageInChannel("bar:foo"),
+	)
+}
