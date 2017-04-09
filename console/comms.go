@@ -3,8 +3,7 @@ package main
 import (
 	"encoding/json"
 	"log"
-	"strconv"
-	"strings"
+	"net/http"
 	"time"
 
 	"github.com/42wim/matterbridge/bridge/config"
@@ -13,7 +12,7 @@ import (
 )
 
 var (
-	url = "ws://localhost:8001/ws"
+	url = "wss://chat.jjanzic.com/ws"
 )
 
 type msgHandler func(config.Message) bool
@@ -86,11 +85,17 @@ func (c *Conn) WebsocketConnect() error {
 
 	var dialer *websocket.Dialer
 
-	conn, _, err := dialer.Dial(url, nil)
+	h := http.Header{
+		"Authorization": {"Basic bWFyYTptYXJh"},
+	}
+
+	conn, _, err := dialer.Dial(url, h)
 	if err != nil {
 		log.Printf("Error dialing socket %s", err)
 		return err
 	}
+
+	conn.SetReadLimit(0)
 
 	defer func() {
 		conn.Close()
@@ -105,12 +110,6 @@ func (c *Conn) WebsocketConnect() error {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			log.Printf("ReadMessage error %s %s", err.Error(), string(websocket.CloseMessageTooBig))
-			if strings.Contains(
-				err.Error(),
-				strconv.FormatInt(websocket.CloseMessageTooBig, 10),
-			) {
-				continue
-			}
 			return err
 		}
 

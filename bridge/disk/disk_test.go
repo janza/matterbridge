@@ -121,7 +121,7 @@ func TestTailLog(t *testing.T) {
 		b.AppendToFile(testFile, config.Message{})
 	}
 
-	l := b.TailLog(testFile, 10, time.Time{})
+	l := b.TailLog(testFile, 10, offsetTime{to: time.Time{}})
 
 	for e := l.Front(); e != nil; e = e.Next() {
 		assert.Equal(t, config.Message{}, e.Value, "element in the list matches expected")
@@ -145,7 +145,7 @@ func TestTailLogWithOffset(t *testing.T) {
 		b.AppendToFile(testFile, config.Message{Text: "second", Timestamp: secondBatchTime})
 	}
 
-	l := b.TailLog(testFile, 10, secondBatchTime)
+	l := b.TailLog(testFile, 10, offsetTime{to: secondBatchTime})
 
 	for e := l.Front(); e != nil; e = e.Next() {
 		assert.Equal(t, config.Message{Text: "hi", Timestamp: firstBatchTime}, e.Value, "element in the list matches expected")
@@ -169,11 +169,35 @@ func TestTailLogOutOfBound(t *testing.T) {
 		b.AppendToFile(testFile, config.Message{Timestamp: secondBatchTime})
 	}
 
-	l := b.TailLog(testFile, 30, secondBatchTime)
+	l := b.TailLog(testFile, 30, offsetTime{to: secondBatchTime})
 
 	for e := l.Front(); e != nil; e = e.Next() {
 		assert.Equal(t, config.Message{Text: "hi", Timestamp: firstBatchTime}, e.Value, "element in the list matches expected")
 	}
 
 	assert.Equal(t, 10, l.Len(), "there should be 10 elements in list")
+}
+
+func TestTailLogWithOffsetFrom(t *testing.T) {
+	testFile := "test.json"
+	os.Remove(testFile)
+	b := &Bdisk{}
+
+	firstBatchTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.Local)
+	for i := 0; i < 10; i++ {
+		b.AppendToFile(testFile, config.Message{Text: "hi", Timestamp: firstBatchTime})
+	}
+
+	secondBatchTime := time.Date(2000, 1, 2, 0, 0, 0, 0, time.Local)
+	for i := 0; i < 15; i++ {
+		b.AppendToFile(testFile, config.Message{Text: "second", Timestamp: secondBatchTime})
+	}
+
+	l := b.TailLog(testFile, 0, offsetTime{from: secondBatchTime})
+
+	for e := l.Front(); e != nil; e = e.Next() {
+		assert.Equal(t, config.Message{Text: "second", Timestamp: secondBatchTime}, e.Value, "element in the list matches expected")
+	}
+
+	assert.Equal(t, 15, l.Len(), "there should be 15 elements in list")
 }

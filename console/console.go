@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -11,7 +12,6 @@ import (
 	"github.com/fatih/color"
 	"github.com/jroimartin/gocui"
 	"github.com/kennygrant/sanitize"
-	"github.com/kr/text"
 	"github.com/plar/go-adaptive-radix-tree"
 )
 
@@ -50,9 +50,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer func() {
-		g.Close()
-	}()
+	defer g.Close()
 
 	storage := NewStorage(func() {
 		g.Execute(func(g *gocui.Gui) error {
@@ -75,12 +73,14 @@ func main() {
 
 	go func() {
 		err := connection.WebsocketConnect()
-		fmt.Println(err)
-		g.Close()
+		log.Printf("quiting after socket disconnect %s\n", err)
+		g.Execute(func(g *gocui.Gui) error {
+			return gocui.ErrQuit
+		})
 	}()
 
-	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
-		fmt.Println(err)
+	if err := g.MainLoop(); err != nil {
+		log.Printf("exiting main loop %s\n", err)
 	}
 }
 
@@ -290,18 +290,17 @@ func (w *MessagesWidget) Layout(g *gocui.Gui) error {
 		g.SetViewOnTop(w.name)
 	}
 	v.Clear()
-	fmt.Fprint(v, "These are the messages:\n")
 
 	w.storage.IterateOverChannelMsgs(
 		w.storage.activeChannel.ID,
 		func(msg config.Message, userName string) {
-			indentedText := text.Indent(sanitize.HTML(msg.Text), "")
+			cleanText := sanitize.HTML(msg.Text)
 			fmt.Fprintf(
 				v,
-				"%s %s: %s\n",
+				"%s %s| %s\n",
 				grayColor(formatTime(msg.Timestamp)),
 				colorize(fmt.Sprintf("%12.12s", userName)),
-				whiteColor(indentedText),
+				whiteColor(cleanText),
 			)
 		},
 	)
@@ -324,7 +323,7 @@ func newStatusBarWidget(name string, s *Storage) *StatusBarWidget {
 
 func (w *StatusBarWidget) Layout(g *gocui.Gui) error {
 	maxX, _ := g.Size()
-	v, err := g.SetView(w.name, -1, -1, maxX, 1)
+	v, err := g.SetView(w.name, -1, -1, maxX, 0)
 	if err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
@@ -337,11 +336,17 @@ func (w *StatusBarWidget) Layout(g *gocui.Gui) error {
 
 	v.Clear()
 	w.storage.readLock.Lock()
+	var channels []string
 	for channel, count := range w.storage.unreadMessages {
 		if count > 0 {
-			fmt.Fprintf(v, "%s (%d)", channel, count)
+			channels = append(channels, channel)
 		}
 	}
+	sort.Strings(channels)
+	for _, channel := range channels {
+		fmt.Fprintf(v, "%s (%d)", channel, w.storage.unreadMessages[channel])
+	}
+
 	w.storage.readLock.Unlock()
 
 	return nil

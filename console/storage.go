@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"sync"
 	"time"
 
@@ -60,7 +61,6 @@ func (s *Storage) NewMessage(m config.Message) bool {
 func (s *Storage) NewChannel(c config.Channel) {
 	s.channels = append(s.channels, c)
 	s.channels.Sort()
-	s.redraw()
 }
 
 func (s *Storage) NewUser(u config.User) {
@@ -87,6 +87,7 @@ func (s *Storage) GetUser(account, userID string) config.User {
 			return user
 		}
 	}
+	log.Printf("user not found: %s %s", account, userID)
 	return config.User{Name: userID}
 }
 

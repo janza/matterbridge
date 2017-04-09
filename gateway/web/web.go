@@ -75,7 +75,7 @@ func (gw *WebGateway) handleReceive(c config.Comms) {
 		case msg := <-c.Messages:
 			flog.Debugf("Got message %#v", msg)
 			if msg.Timestamp.IsZero() {
-				msg.Timestamp = time.Now()
+				msg.Timestamp = time.Now().UTC()
 			}
 			gw.handleMessage(msg)
 		case user := <-c.Users:

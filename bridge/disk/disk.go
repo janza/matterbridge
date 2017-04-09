@@ -129,15 +129,18 @@ func lineCounter(r io.Reader) (int, error) {
 	}
 }
 
-func (b *Bdisk) TailLog(filename string, n int, offset time.Time) list.List {
+type offsetTime struct {
+	to   time.Time
+	from time.Time
+}
+
+func (b *Bdisk) TailLog(filename string, n int, offset offsetTime) list.List {
 	l := list.New()
 	f, err := os.Open(filename)
 	if err != nil {
 		flog.Warnf("Failed to open message.json: %s", err)
 		return *l
 	}
-
-	offsetIsZero := offset.IsZero()
 
 	d := json.NewDecoder(f)
 	f.Seek(0, 0)
@@ -150,13 +153,20 @@ func (b *Bdisk) TailLog(filename string, n int, offset time.Time) list.List {
 			flog.Warnf("Failed to load message: %s", err)
 			break
 		}
-		if !offsetIsZero && (msg.Timestamp.After(offset) || msg.Timestamp.Equal(offset)) {
+		if !offset.to.IsZero() && (msg.Timestamp.After(offset.to) || msg.Timestamp.Equal(offset.to)) {
 			break
 		}
 
-		l.PushBack(msg)
-		if l.Len() > n {
-			l.Remove(l.Front())
+		if offset.from.IsZero() {
+			l.PushBack(msg)
+
+			if l.Len() > n {
+				l.Remove(l.Front())
+			}
+		} else {
+			if !msg.Timestamp.Before(offset.from) {
+				l.PushBack(msg)
+			}
 		}
 	}
 
@@ -169,6 +179,9 @@ func (b *Bdisk) Send(msg config.Message) error {
 }
 
 func (b *Bdisk) MarkRead(msg config.Message) error {
+	if msg.Timestamp.IsZero() {
+		return nil
+	}
 	return b.StoreKeyValue("read_status.json", msg.Channel+":"+msg.Account, msg)
 }
 
@@ -180,7 +193,7 @@ func (b *Bdisk) Discovery(channel config.Channel) error {
 	return b.StoreKeyValue("channels.json", channel.ID, channel)
 }
 
-func (b *Bdisk) ReplayMessages(channel string, numberOfMessages int, offset time.Time) {
+func (b *Bdisk) ReplayMessages(channel string, numberOfMessages int, offset offsetTime) {
 	l := b.TailLog(channel+"_log.json", numberOfMessages, offset)
 
 	for e := l.Front(); e != nil; e = e.Next() {
@@ -203,14 +216,14 @@ func (b *Bdisk) GetLastReadMessages() {
 	var readStatusMap ReadStatusMap
 	b.ReadKeyValue("read_status.json", &readStatusMap)
 	for _, readMessage := range readStatusMap {
-		b.Comms.ReadStatus <- readMessage
+		b.ReplayMessages(readMessage.Channel+":"+readMessage.Account, 0, offsetTime{from: readMessage.Timestamp})
 	}
 }
 
 func (b *Bdisk) HandleCommand(command interface{}) error {
 	switch cmd := command.(type) {
 	case config.GetMessagesCommand:
-		go b.ReplayMessages(cmd.Channel, 100, cmd.Offset)
+		go b.ReplayMessages(cmd.Channel, 100, offsetTime{to: cmd.Offset})
 	case config.GetUsersCommand:
 		go b.ReplayUsers()
 	case config.GetChannelsCommand:

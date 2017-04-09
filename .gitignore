@@ -1,3 +1,5 @@
 matterbridge.toml
 *.json
 log
+matterbridge
+console/console
