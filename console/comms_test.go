@@ -83,7 +83,7 @@ func TestMarkAsRead(t *testing.T) {
 func TestDebouncedCommands(t *testing.T) {
 	c := &Conn{}
 	c.commands = make(chan config.Command)
-	c.debouncedCommands = c.debounceCommandChannel(1*time.Second, c.commands)
+	c.debouncedCommands = debounceCommandChannel(1*time.Second, c.commands)
 	done := make(chan config.Command)
 	go func() {
 		for c := range c.commands {

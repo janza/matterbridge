@@ -137,8 +137,7 @@ func (w *Window) SetActiveChannel(channel config.Channel) {
 		w.storage.activeChannel,
 		w.storage.getLastMessageTimestamp(),
 	)
-	lastMessageInChannel := w.storage.LastMessageInChannel(channel.ID)
-	w.connection.MarkAsRead(lastMessageInChannel)
+	w.connection.SendMarkAsRead(w.storage.LastMessageInChannel(channel.ID))
 }
 
 func (w *Window) openChannelPicker(g *gocui.Gui, v *gocui.View) error {
@@ -323,7 +322,7 @@ func newStatusBarWidget(name string, s *Storage) *StatusBarWidget {
 
 func (w *StatusBarWidget) Layout(g *gocui.Gui) error {
 	maxX, _ := g.Size()
-	v, err := g.SetView(w.name, -1, -1, maxX, 0)
+	v, err := g.SetView(w.name, -1, -1, maxX, 1)
 	if err != nil {
 		if err != gocui.ErrUnknownView {
 			return err

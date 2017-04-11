@@ -32,7 +32,7 @@ type Message struct {
 }
 
 func (m *Message) GetKey() string {
-	return m.Timestamp.String()[:20] + string(adler32.Checksum([]byte(m.Text)))
+	return m.Timestamp.String()[:19] + string(adler32.Checksum([]byte(m.Text)))
 }
 
 func (m *Message) SetTimestamp() {

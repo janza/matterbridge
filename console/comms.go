@@ -25,7 +25,7 @@ type Conn struct {
 	done              chan struct{}
 	commands          chan config.Command
 	messages          chan config.Message
-	debouncedCommands chan config.Command
+	debouncedCommands chan config.Message
 	newMessage        msgHandler
 	newUser           userHandler
 	newChannel        channelHandler
@@ -38,7 +38,7 @@ func NewConnection(done chan struct{}, m msgHandler, u userHandler, c channelHan
 	comms.done = done
 	comms.messages = make(chan config.Message)
 	comms.commands = make(chan config.Command)
-	comms.debouncedCommands = comms.debounceCommandChannel(3*time.Second, comms.commands)
+	comms.debouncedCommands = debounceCommandChannel(3*time.Second, comms.commands)
 	comms.newMessage = m
 	comms.newUser = u
 	comms.newChannel = c
@@ -46,34 +46,50 @@ func NewConnection(done chan struct{}, m msgHandler, u userHandler, c channelHan
 	return comms
 }
 
-func (c *Conn) debounceCommandChannel(
+func debounceCommandChannel(
 	interval time.Duration,
 	output chan config.Command,
-) chan config.Command {
-	input := make(chan config.Command)
+) chan config.Message {
+	input := make(chan config.Message)
+
+	loadBuffer := func(buffer, msg config.Message) config.Message {
+		if buffer.Timestamp.Before(msg.Timestamp) {
+			return msg
+		}
+		return buffer
+	}
 
 	go func() {
-		var buffer config.Command
+		var buffer config.Message
+		var msg config.Message
 		var ok bool
 
-		buffer, ok = <-input
+		msg, ok = <-input
 		if !ok {
 			return
 		}
+		buffer = loadBuffer(buffer, msg)
 
 		for {
 			select {
-			case buffer, ok = <-input:
+			case msg, ok = <-input:
 				if !ok {
 					return
 				}
+				buffer = loadBuffer(buffer, msg)
 
 			case <-time.After(interval):
-				output <- buffer
-				buffer, ok = <-input
+				output <- config.Command{
+					Type: "mark_message_as_read",
+					Command: config.MarkMessageAsRead{
+						Message: buffer,
+					},
+				}
+				msg, ok = <-input
 				if !ok {
 					return
 				}
+				buffer = loadBuffer(buffer, msg)
 			}
 		}
 	}()
@@ -134,7 +150,7 @@ func (c *Conn) handleWebsocketMessage(message []byte) {
 
 	if wireMsg.Type == "message" {
 		if c.newMessage(wireMsg.Message) {
-			c.MarkAsRead(wireMsg.Message)
+			c.SendMarkAsRead(wireMsg.Message)
 		}
 	}
 
@@ -180,13 +196,9 @@ func (c *Conn) fetchMessages(channel config.Channel, since time.Time) {
 	}
 }
 
-func (c *Conn) MarkAsRead(msg config.Message) {
-	c.debouncedCommands <- config.Command{
-		Type: "mark_message_as_read",
-		Command: config.MarkMessageAsRead{
-			Message: msg,
-		},
-	}
+func (c *Conn) SendMarkAsRead(msg config.Message) {
+	log.Printf("Comms marking as read: %#v", msg)
+	c.debouncedCommands <- msg
 }
 
 func (c *Conn) wsWriter(conn *websocket.Conn) {

@@ -87,7 +87,6 @@ func (s *Storage) GetUser(account, userID string) config.User {
 			return user
 		}
 	}
-	log.Printf("user not found: %s %s", account, userID)
 	return config.User{Name: userID}
 }
 
@@ -110,6 +109,7 @@ func (s *Storage) LastMessageInChannel(channelID string) config.Message {
 	s.IterateOverChannelMsgs(channelID, func(msg config.Message, _ string) {
 		lastMsg = msg
 	})
+	log.Printf("Found last message: %#v", lastMsg)
 	return lastMsg
 }
 
