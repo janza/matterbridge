@@ -22,7 +22,7 @@ type Storage struct {
 	readMessages   readMessagesInChannel
 	readLock       *sync.Mutex
 	activeChannel  config.Channel
-	channels       channelSlice
+	channels       channelMapByID
 	users          []config.User
 	redraw         func()
 }
@@ -33,7 +33,7 @@ func NewStorage(redraw func()) *Storage {
 	storage.unreadMessages = make(map[string]int)
 	storage.readMessages = make(readMessagesInChannel)
 	storage.activeChannel = config.Channel{}
-	storage.channels = make(channelSlice, 0)
+	storage.channels = make(channelMapByID)
 	storage.users = make([]config.User, 0)
 	storage.redraw = redraw
 	storage.readLock = &sync.Mutex{}
@@ -59,8 +59,7 @@ func (s *Storage) NewMessage(m config.Message) bool {
 }
 
 func (s *Storage) NewChannel(c config.Channel) {
-	s.channels = append(s.channels, c)
-	s.channels.Sort()
+	s.channels[c.ID] = c
 }
 
 func (s *Storage) NewUser(u config.User) {

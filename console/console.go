@@ -22,7 +22,7 @@ var (
 	grayColor        = color.New(color.FgHiGreen).SprintFunc()
 	redColor         = color.New(color.FgRed).Add(color.Underline).SprintFunc()
 	highlightChannel = color.New(color.Underline).SprintFunc()
-	yellowColor      = color.New(color.FgYellow).Add(color.Underline).SprintFunc()
+	yellowColor      = color.New(color.FgYellow).SprintFunc()
 	blueColor        = color.New(color.FgBlue).SprintFunc()
 )
 
@@ -163,18 +163,22 @@ func (w *Window) quit(g *gocui.Gui, v *gocui.View) error {
 	return gocui.ErrQuit
 }
 
+type channelMapByID map[string]config.Channel
 type channelSlice []config.Channel
 
-func (slice channelSlice) pos(value config.Channel) int {
-	for p, v := range slice {
-		if v == value {
-			return p
-		}
+func (channels channelMapByID) SortedSlice() channelSlice {
+	slice := make(channelSlice, len(channels))
+	i := 0
+	for _, c := range channels {
+		slice[i] = c
+		i++
 	}
-	return -1
+	slice.Sort()
+	return slice
 }
 
 func (slice channelSlice) Sort() {
+
 	cs := &channelSorter{
 		channelSlice: slice,
 	}
@@ -338,15 +342,20 @@ func (w *StatusBarWidget) Layout(g *gocui.Gui) error {
 
 	v.Clear()
 	w.storage.readLock.Lock()
-	var channels []string
-	for channel, count := range w.storage.unreadMessages {
+	var channels channelSlice
+	for channelID, count := range w.storage.unreadMessages {
 		if count > 0 {
-			channels = append(channels, channel)
+			channels = append(channels, w.storage.channels[channelID])
 		}
 	}
-	sort.Strings(channels)
+
+	channels.Sort()
 	for _, channel := range channels {
-		fmt.Fprintf(v, "%s (%d)", channel, w.storage.unreadMessages[channel])
+		fmt.Fprintf(
+			v,
+			"%s (%d) ",
+			yellowColor(channel.Name),
+			w.storage.unreadMessages[channel.ID])
 	}
 
 	w.storage.readLock.Unlock()
@@ -375,9 +384,9 @@ func (w *ChannelsWidget) addCallback(cb func(isCanceled bool, c config.Channel))
 	w.channelSelected = cb
 }
 
-func filterChannels(channels channelSlice, f func(config.Channel) bool) channelSlice {
+func filterChannels(channels channelMapByID, f func(config.Channel) bool) channelSlice {
 	vsf := make(channelSlice, 0)
-	for _, v := range channels {
+	for _, v := range channels.SortedSlice() {
 		if f(v) {
 			vsf = append(vsf, v)
 		}
@@ -386,10 +395,12 @@ func filterChannels(channels channelSlice, f func(config.Channel) bool) channelS
 }
 
 func (w *ChannelsWidget) filteredChannels() channelSlice {
+	filterString := strings.ToLower(w.channelFilter)
 	return filterChannels(
 		w.storage.channels,
 		func(channel config.Channel) bool {
-			return w.channelFilter == "" || strings.Contains(channel.ID, w.channelFilter)
+			return w.channelFilter == "" ||
+				strings.Contains(strings.ToLower(channel.Name), filterString)
 		},
 	)
 }
@@ -419,13 +430,13 @@ func (w *ChannelsWidget) Layout(g *gocui.Gui) error {
 
 	v.Clear()
 	format := "%s\n"
-	fmt.Fprintf(v, format, w.storage.activeChannel.ID)
+	fmt.Fprintf(v, format, w.storage.activeChannel.Name)
 	for i, channel := range w.filteredChannels() {
 		if channel == w.storage.activeChannel {
 			continue
 		}
 		isSelected := i == w.channelSelection
-		splitByColor := strings.Split(channel.ID, w.channelFilter)
+		splitByColor := strings.Split(channel.Name, w.channelFilter)
 		if isSelected {
 			selectionColored := make([]string, len(splitByColor))
 			for i, val := range splitByColor {
