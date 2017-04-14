@@ -97,10 +97,13 @@ type Window struct {
 }
 
 func NewWindow(gui *gocui.Gui, storage *Storage, connection *Conn) *Window {
+	statusbarWidget := newStatusBarWidget("statusbar", storage)
+	messagesWidget := newMessagesWidget("messages", storage)
+	channelsWidget := newChannelsWidget("channels", storage)
 	w := &Window{
-		messagesWidget:  newMessagesWidget("messages", storage),
-		channelsWidget:  newChannelsWidget("channels", storage),
-		statusbarWidget: newStatusBarWidget("statusbar", storage),
+		statusbarWidget: statusbarWidget,
+		messagesWidget:  messagesWidget,
+		channelsWidget:  channelsWidget,
 		storage:         storage,
 		connection:      connection,
 		gui:             gui,
@@ -120,7 +123,7 @@ func (w *Window) sendMessage(text string) {
 }
 
 func (w *Window) manage() error {
-	w.gui.SetManager(w.statusbarWidget, w.messagesWidget, w.inputWidget, w.channelsWidget)
+	w.gui.SetManager(w.messagesWidget, w.inputWidget, w.channelsWidget, w.statusbarWidget)
 
 	if err := w.gui.SetKeybinding("", gocui.KeyCtrlC, gocui.ModNone, w.quit); err != nil {
 		return err

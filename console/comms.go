@@ -52,15 +52,14 @@ func debounceCommandChannel(
 ) chan config.Message {
 	input := make(chan config.Message)
 
-	loadBuffer := func(buffer, msg config.Message) config.Message {
-		if buffer.Timestamp.Before(msg.Timestamp) {
-			return msg
+	loadBuffer := func(buffer config.MessageInChannel, msg config.Message) {
+		if buffer[msg.GetChannelID()].Timestamp.Before(msg.Timestamp) {
+			buffer[msg.GetChannelID()] = msg
 		}
-		return buffer
 	}
 
 	go func() {
-		var buffer config.Message
+		buffer := make(config.MessageInChannel)
 		var msg config.Message
 		var ok bool
 
@@ -68,7 +67,7 @@ func debounceCommandChannel(
 		if !ok {
 			return
 		}
-		buffer = loadBuffer(buffer, msg)
+		loadBuffer(buffer, msg)
 
 		for {
 			select {
@@ -76,20 +75,23 @@ func debounceCommandChannel(
 				if !ok {
 					return
 				}
-				buffer = loadBuffer(buffer, msg)
+				loadBuffer(buffer, msg)
 
 			case <-time.After(interval):
-				output <- config.Command{
-					Type: "mark_message_as_read",
-					Command: config.MarkMessageAsRead{
-						Message: buffer,
-					},
+				for _, msg := range buffer {
+					output <- config.Command{
+						Type: "mark_message_as_read",
+						Command: config.MarkMessageAsRead{
+							Message: msg,
+						},
+					}
 				}
+				buffer = make(config.MessageInChannel)
 				msg, ok = <-input
 				if !ok {
 					return
 				}
-				buffer = loadBuffer(buffer, msg)
+				loadBuffer(buffer, msg)
 			}
 		}
 	}()

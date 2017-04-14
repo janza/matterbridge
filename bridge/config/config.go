@@ -17,6 +17,8 @@ const (
 	EVENT_FAILURE    = "failure"
 )
 
+type MessageInChannel map[string]Message
+
 type Message struct {
 	ID        string
 	Text      string
@@ -37,6 +39,10 @@ func (m *Message) GetKey() string {
 
 func (m *Message) SetTimestamp() {
 	m.Timestamp = time.Now().UTC()
+}
+
+func (m *Message) GetChannelID() string {
+	return m.Channel + ":" + m.Account
 }
 
 type User struct {
