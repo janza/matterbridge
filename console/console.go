@@ -341,24 +341,10 @@ func (w *StatusBarWidget) Layout(g *gocui.Gui) error {
 	}
 
 	v.Clear()
-	w.storage.readLock.Lock()
-	var channels channelSlice
-	for channelID, count := range w.storage.unreadMessages {
-		if count > 0 {
-			channels = append(channels, w.storage.channels[channelID])
-		}
-	}
 
-	channels.Sort()
-	for _, channel := range channels {
-		fmt.Fprintf(
-			v,
-			"%s (%d) ",
-			yellowColor(channel.Name),
-			w.storage.unreadMessages[channel.ID])
+	for _, count := range w.storage.GetUnreadCountForChannels() {
+		fmt.Fprintf(v, "%s (%d) ", yellowColor(count.channel.Name), count.unread)
 	}
-
-	w.storage.readLock.Unlock()
 
 	return nil
 }

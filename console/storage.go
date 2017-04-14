@@ -142,3 +142,32 @@ func (s *Storage) IterateOverChannelMsgs(
 		}
 	}
 }
+
+type ChannelUnreadCount struct {
+	unread  int
+	channel config.Channel
+}
+
+type UnreadChannels []ChannelUnreadCount
+
+func (s *Storage) GetUnreadCountForChannels() UnreadChannels {
+	s.readLock.Lock()
+	var channels channelSlice
+	for channelID, count := range s.unreadMessages {
+		if count > 0 {
+			channels = append(channels, s.channels[channelID])
+		}
+	}
+	s.readLock.Unlock()
+
+	channels.Sort()
+	var unreadChannels UnreadChannels
+	for _, channel := range channels {
+		unreadChannels = append(unreadChannels, ChannelUnreadCount{
+			unread:  s.unreadMessages[channel.ID],
+			channel: channel,
+		})
+	}
+
+	return unreadChannels
+}
