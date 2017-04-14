@@ -64,14 +64,14 @@ func TestHandleWebsocketMessageReadStatus(t *testing.T) {
 
 func TestMarkAsRead(t *testing.T) {
 	c := &Conn{}
-	c.debouncedCommands = make(chan config.Command)
-	done := make(chan config.Command)
+	c.debouncedCommands = make(chan config.Message)
+	done := make(chan config.Message)
 	go func() {
 		for c := range c.debouncedCommands {
 			done <- c
 		}
 	}()
-	c.MarkAsRead(config.Message{})
+	c.SendMarkAsRead(config.Message{})
 	assert.Equal(t, config.Command{
 		Type: "mark_message_as_read",
 		Command: config.MarkMessageAsRead{
@@ -90,17 +90,35 @@ func TestDebouncedCommands(t *testing.T) {
 			done <- c
 		}
 	}()
-	first := time.Now()
-	c.debouncedCommands <- config.Command{Type: "foobar"}
-	time.Sleep(500 * time.Millisecond)
-	c.debouncedCommands <- config.Command{Type: "foobar2"}
-	assert.Equal(t, config.Command{Type: "foobar2"}, <-done)
-	assert.Equal(t, true, time.Since(first) > 1500*time.Millisecond)
-	assert.Equal(t, true, time.Since(first) < 1600*time.Millisecond)
 
-	second := time.Now()
-	c.debouncedCommands <- config.Command{Type: "foobar3"}
-	assert.Equal(t, config.Command{Type: "foobar3"}, <-done)
-	assert.Equal(t, true, time.Since(second) > 1000*time.Millisecond)
-	assert.Equal(t, true, time.Since(second) < 1100*time.Millisecond)
+	firstMsgTime := time.Now()
+	c.debouncedCommands <- config.Message{Timestamp: firstMsgTime, Text: "foobar"}
+	time.Sleep(500 * time.Millisecond)
+	secondMsgTime := time.Now()
+	c.debouncedCommands <- config.Message{Timestamp: secondMsgTime, Text: "foobar2"}
+	assert.Equal(t, config.Command{
+		Type: "mark_message_as_read",
+		Command: config.MarkMessageAsRead{
+			Message: config.Message{
+				Timestamp: secondMsgTime,
+				Text:      "foobar2",
+			},
+		},
+	}, <-done)
+	assert.Equal(t, true, time.Since(firstMsgTime) > 1500*time.Millisecond)
+	assert.Equal(t, true, time.Since(firstMsgTime) < 1600*time.Millisecond)
+
+	ThirdMsgTime := time.Now()
+	c.debouncedCommands <- config.Message{Timestamp: ThirdMsgTime, Text: "foobar3"}
+	assert.Equal(t, config.Command{
+		Type: "mark_message_as_read",
+		Command: config.MarkMessageAsRead{
+			Message: config.Message{
+				Timestamp: ThirdMsgTime,
+				Text:      "foobar3",
+			},
+		},
+	}, <-done)
+	assert.Equal(t, true, time.Since(ThirdMsgTime) > 1000*time.Millisecond)
+	assert.Equal(t, true, time.Since(ThirdMsgTime) < 1100*time.Millisecond)
 }
