@@ -193,7 +193,7 @@ func TestTailLogWithOffsetFrom(t *testing.T) {
 		b.AppendToFile(testFile, config.Message{Text: "second", Timestamp: secondBatchTime})
 	}
 
-	l := b.TailLog(testFile, 0, offsetTime{from: secondBatchTime})
+	l := b.TailLog(testFile, 0, offsetTime{from: firstBatchTime})
 
 	for e := l.Front(); e != nil; e = e.Next() {
 		assert.Equal(t, config.Message{Text: "second", Timestamp: secondBatchTime}, e.Value, "element in the list matches expected")

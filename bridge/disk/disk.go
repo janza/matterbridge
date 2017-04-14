@@ -164,7 +164,7 @@ func (b *Bdisk) TailLog(filename string, n int, offset offsetTime) list.List {
 				l.Remove(l.Front())
 			}
 		} else {
-			if !msg.Timestamp.Before(offset.from) {
+			if offset.from.Before(msg.Timestamp) {
 				l.PushBack(msg)
 			}
 		}
