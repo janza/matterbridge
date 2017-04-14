@@ -370,27 +370,6 @@ func (w *ChannelsWidget) addCallback(cb func(isCanceled bool, c config.Channel))
 	w.channelSelected = cb
 }
 
-func filterChannels(channels channelMapByID, f func(config.Channel) bool) channelSlice {
-	vsf := make(channelSlice, 0)
-	for _, v := range channels.SortedSlice() {
-		if f(v) {
-			vsf = append(vsf, v)
-		}
-	}
-	return vsf
-}
-
-func (w *ChannelsWidget) filteredChannels() channelSlice {
-	filterString := strings.ToLower(w.channelFilter)
-	return filterChannels(
-		w.storage.channels,
-		func(channel config.Channel) bool {
-			return w.channelFilter == "" ||
-				strings.Contains(strings.ToLower(channel.Name), filterString)
-		},
-	)
-}
-
 // Layout handles console display layouting
 func (w *ChannelsWidget) Layout(g *gocui.Gui) error {
 	maxX, maxY := g.Size()
@@ -417,7 +396,7 @@ func (w *ChannelsWidget) Layout(g *gocui.Gui) error {
 	v.Clear()
 	format := "%s\n"
 	fmt.Fprintf(v, format, w.storage.activeChannel.Name)
-	for i, channel := range w.filteredChannels() {
+	for i, channel := range w.storage.FilterByName(strings.ToLower(w.channelFilter)) {
 		if channel == w.storage.activeChannel {
 			continue
 		}
@@ -439,7 +418,7 @@ func (w *ChannelsWidget) Layout(g *gocui.Gui) error {
 func (w *ChannelsWidget) editor(v *gocui.View, key gocui.Key, ch rune, mod gocui.Modifier) {
 	switch {
 	case ch != 0 && mod == 0:
-		w.channelFilter += string(ch)
+		w.channelFilter += strings.ToLower(string(ch))
 	case key == gocui.KeySpace:
 		w.channelFilter += " "
 	case key == gocui.KeyCtrlJ:
@@ -448,10 +427,10 @@ func (w *ChannelsWidget) editor(v *gocui.View, key gocui.Key, ch rune, mod gocui
 		w.channelSelection--
 	case key == gocui.KeyBackspace || key == gocui.KeyBackspace2:
 		if len(w.channelFilter) > 0 {
-			w.channelFilter = w.channelFilter[:len(w.channelFilter)-1]
+			w.channelFilter = strings.ToLower(w.channelFilter[:len(w.channelFilter)-1])
 		}
 	case key == gocui.KeyEnter:
-		channels := w.filteredChannels()
+		channels := w.storage.FilterByName(w.channelFilter)
 		nChannels := len(channels)
 		if nChannels > 0 {
 			w.channelSelection = (w.channelSelection + nChannels) % nChannels
@@ -463,7 +442,7 @@ func (w *ChannelsWidget) editor(v *gocui.View, key gocui.Key, ch rune, mod gocui
 		return
 	}
 
-	channels := w.filteredChannels()
+	channels := w.storage.FilterByName(w.channelFilter)
 	nChannels := len(channels)
 	if nChannels > 0 {
 		w.channelSelection = (w.channelSelection + nChannels) % nChannels

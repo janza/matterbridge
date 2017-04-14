@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,6 +60,8 @@ func (s *Storage) NewMessage(m config.Message) bool {
 }
 
 func (s *Storage) NewChannel(c config.Channel) {
+	s.readLock.Lock()
+	defer s.readLock.Unlock()
 	s.channels[c.ID] = c
 }
 
@@ -152,13 +155,13 @@ type UnreadChannels []ChannelUnreadCount
 
 func (s *Storage) GetUnreadCountForChannels() UnreadChannels {
 	s.readLock.Lock()
+	defer s.readLock.Unlock()
 	var channels channelSlice
 	for channelID, count := range s.unreadMessages {
 		if count > 0 {
 			channels = append(channels, s.channels[channelID])
 		}
 	}
-	s.readLock.Unlock()
 
 	channels.Sort()
 	var unreadChannels UnreadChannels
@@ -170,4 +173,26 @@ func (s *Storage) GetUnreadCountForChannels() UnreadChannels {
 	}
 
 	return unreadChannels
+}
+
+func filterChannels(channels channelMapByID, f func(config.Channel) bool) channelSlice {
+	vsf := make(channelSlice, 0)
+	for _, v := range channels.SortedSlice() {
+		if f(v) {
+			vsf = append(vsf, v)
+		}
+	}
+	return vsf
+}
+
+func (s *Storage) FilterByName(filterString string) channelSlice {
+	s.readLock.Lock()
+	defer s.readLock.Unlock()
+	return filterChannels(
+		s.channels,
+		func(channel config.Channel) bool {
+			return filterString == "" ||
+				strings.Contains(strings.ToLower(channel.Name), filterString)
+		},
+	)
 }
