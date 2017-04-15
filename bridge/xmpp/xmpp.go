@@ -233,7 +233,8 @@ func (b *Bxmpp) handleXMPP() error {
 			}
 		case xmpp.IQ:
 			for _, i := range v.ClientQuery.Item {
-				b.KnownUsers[i.Name] = i.Jid
+				node, domain, _ := b.parseJid(i.Jid)
+				b.KnownUsers[i.Name] = node + "@" + domain
 				b.Users <- config.NewUser(i.Jid, b.Account, i.Name)
 			}
 			for _, channel := range v.DiscoQuery.Item {
