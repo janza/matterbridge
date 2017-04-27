@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/42wim/matterbridge/bridge/config"
+	"github.com/42wim/matterbridge/console"
 	"github.com/42wim/matterbridge/gateway"
 	"github.com/42wim/matterbridge/gateway/samechannel"
 	"github.com/42wim/matterbridge/gateway/web"
@@ -23,8 +24,15 @@ func init() {
 func main() {
 	flagConfig := flag.String("conf", "matterbridge.toml", "config file")
 	flagDebug := flag.Bool("debug", false, "enable debug")
+	flagUrl := flag.String("connect", "", "url to connect to")
 	flagVersion := flag.Bool("version", false, "show version")
 	flag.Parse()
+
+	if *flagUrl != "" {
+		console.Main(*flagUrl)
+		return
+	}
+
 	if *flagVersion {
 		fmt.Printf("version: %s %s\n", version, githash)
 		return

@@ -73,25 +73,25 @@ func (gw *WebGateway) handleReceive(c config.Comms) {
 	for {
 		select {
 		case msg := <-c.Messages:
-			flog.Debugf("Got message %#v", msg)
+			flog.Debugf("Got message %s", msg.Text)
 			if msg.Timestamp.IsZero() {
 				msg.Timestamp = time.Now().UTC()
 			}
 			gw.handleMessage(msg)
 		case user := <-c.Users:
-			flog.Debugf("Got user presence %#v", user)
+			flog.Debugf("Got user presence %s", user.ID)
 			gw.handleUser(user)
 		case channel := <-c.Channels:
-			flog.Debugf("Got channel %#v", channel)
+			flog.Debugf("Got channel %s", channel.ID)
 			gw.handleChannel(channel)
 		case cmd := <-c.Commands:
-			flog.Debugf("Got command %#v", cmd)
+			flog.Debugf("Got command %s", cmd.Type)
 			gw.handleCommand(cmd)
 		case msg := <-c.MessageLog:
-			flog.Debugf("Got message from log %#v", msg)
+			flog.Debugf("Got message from log %s", msg.Text)
 			gw.handleLog(msg)
 		case msg := <-c.ReadStatus:
-			flog.Debugf("Got read status update %#v", msg)
+			flog.Debugf("Got read status update %s", msg.Text)
 			gw.handleReadStatus(msg)
 		}
 	}
@@ -120,7 +120,7 @@ func (gw *WebGateway) handleReadStatus(msg config.Message) {
 }
 
 func (gw *WebGateway) handleLog(msg config.Message) {
-	flog.Debugf("Got message log message %#v", msg)
+	flog.Debugf("Got message log message %s", msg.Text)
 	gw.WebBridge.Send(msg)
 }
 
@@ -139,7 +139,7 @@ func (gw *WebGateway) handleMessage(msg config.Message) {
 			flog.Errorf("Bridge not found: %s", msg.To)
 		}
 	}
-	flog.Debugf("Sending %#v from %s (%s)", msg, msg.Account, msg.Channel)
+	flog.Debugf("Sending %s from %s (%s)", msg.Text, msg.Account, msg.Channel)
 	if err := gw.WebBridge.Send(msg); err != nil {
 		flog.Error(err)
 	}

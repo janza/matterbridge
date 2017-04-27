@@ -13,6 +13,10 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
+var (
+	logPrefix = "logs/"
+)
+
 type Bdisk struct {
 	Comms   config.Comms
 	Account string
@@ -46,7 +50,7 @@ func check(e error) {
 }
 
 func (b *Bdisk) AppendToFile(filename string, data interface{}) error {
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(logPrefix+filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	check(err)
 	defer f.Close()
 	bytes, err := json.Marshal(data)
@@ -60,7 +64,7 @@ func (b *Bdisk) AppendToFile(filename string, data interface{}) error {
 func (b *Bdisk) StoreKeyValue(filename string, key string, value interface{}) error {
 	var keyValueStore KeyValStore
 	var keyValueStoreRaw []byte
-	keyValueStoreRaw, err := ioutil.ReadFile(filename)
+	keyValueStoreRaw, err := ioutil.ReadFile(logPrefix + filename)
 	_, ok := err.(*os.PathError)
 	if !ok {
 		check(err)
@@ -73,14 +77,14 @@ func (b *Bdisk) StoreKeyValue(filename string, key string, value interface{}) er
 	}
 	keyValueStore[key] = value
 	newBytes, err := json.Marshal(keyValueStore)
-	err = ioutil.WriteFile(filename, newBytes, 0644)
+	err = ioutil.WriteFile(logPrefix+filename, newBytes, 0644)
 	check(err)
 	return err
 }
 
 func (b *Bdisk) ReadKeyValue(filename string, value interface{}) error {
 	var fileContents []byte
-	fileContents, err := ioutil.ReadFile(filename)
+	fileContents, err := ioutil.ReadFile(logPrefix + filename)
 	_, ok := err.(*os.PathError)
 	if err != nil && !ok {
 		return err
@@ -136,7 +140,7 @@ type offsetTime struct {
 
 func (b *Bdisk) TailLog(filename string, n int, offset offsetTime) list.List {
 	l := list.New()
-	f, err := os.Open(filename)
+	f, err := os.Open(logPrefix + filename)
 	if err != nil {
 		flog.Warnf("Failed to open message.json: %s", err)
 		return *l

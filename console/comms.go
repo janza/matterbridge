@@ -1,4 +1,4 @@
-package main
+package console
 
 import (
 	"encoding/json"
@@ -9,10 +9,6 @@ import (
 	"github.com/42wim/matterbridge/bridge/config"
 	"github.com/42wim/matterbridge/bridge/web"
 	"github.com/gorilla/websocket"
-)
-
-var (
-	url = "wss://chat.jjanzic.com/ws"
 )
 
 type msgHandler func(config.Message) bool
@@ -99,7 +95,7 @@ func debounceCommandChannel(
 	return input
 }
 
-func (c *Conn) WebsocketConnect() error {
+func (c *Conn) WebsocketConnect(url string) error {
 
 	var dialer *websocket.Dialer
 

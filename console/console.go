@@ -1,4 +1,4 @@
-package main
+package console
 
 import (
 	"fmt"
@@ -45,7 +45,7 @@ func insertMessage(s []config.Message, f config.Message) []config.Message {
 	return s
 }
 
-func main() {
+func Main(url string) {
 	g, err := gocui.NewGui(gocui.Output256)
 	if err != nil {
 		panic(err)
@@ -72,7 +72,7 @@ func main() {
 	}
 
 	go func() {
-		err := connection.WebsocketConnect()
+		err := connection.WebsocketConnect(url)
 		log.Printf("quiting after socket disconnect %s\n", err)
 		g.Execute(func(g *gocui.Gui) error {
 			return gocui.ErrQuit
