@@ -1,12 +1,14 @@
 package webgateway
 
 import (
+	"time"
+
 	"github.com/42wim/matterbridge/bridge"
 	"github.com/42wim/matterbridge/bridge/config"
 	"github.com/42wim/matterbridge/bridge/disk"
 	"github.com/42wim/matterbridge/bridge/web"
 	log "github.com/Sirupsen/logrus"
-	"time"
+	"github.com/boltdb/bolt"
 )
 
 var (
@@ -41,7 +43,12 @@ func New(cfg *config.Config, gateway *config.WebGateway) error {
 	gw.WebBridge = bweb.New(cfg.Web["web.server"], "web.server", c)
 	gw.WebBridge.Connect()
 
-	gw.DiskBridge = bdisk.New(c)
+	db, err := bolt.Open("my.db", 0600, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+	gw.DiskBridge = bdisk.New(c, db)
 
 	for _, account := range gateway.Accounts {
 		br := config.Bridge{Account: account.Account}

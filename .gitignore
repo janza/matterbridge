@@ -1,5 +1,6 @@
 matterbridge.toml
 *.json
+*.db
 log
 matterbridge
 console/console
