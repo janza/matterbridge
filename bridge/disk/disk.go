@@ -80,24 +80,6 @@ func (b *Bdisk) storeKeyValue(filename string, key string, value interface{}) er
 		b.Put([]byte(key), bytes)
 		return nil
 	})
-	// var keyValueStore KeyValStore
-	// var keyValueStoreRaw []byte
-	// keyValueStoreRaw, err := ioutil.ReadFile(logPrefix + filename)
-	// _, ok := err.(*os.PathError)
-	// if !ok {
-	// 	check(err)
-	// }
-	// if string(keyValueStoreRaw) != "" {
-	// 	err = json.Unmarshal(keyValueStoreRaw, &keyValueStore)
-	// 	check(err)
-	// } else {
-	// 	keyValueStore = KeyValStore{}
-	// }
-	// keyValueStore[key] = value
-	// newBytes, err := json.Marshal(keyValueStore)
-	// err = ioutil.WriteFile(logPrefix+filename, newBytes, 0644)
-	// check(err)
-	// return err
 }
 
 func (b *Bdisk) readKeyValue(filename, key string, value interface{}) error {
